@@ -37,6 +37,7 @@ def test_export_leads_writes_expected_columns_and_filters_status(tmp_path):
         "Bedrijfsnaam",
         "Website",
         "Telefoon",
+        "Email",
         "Niche",
         "Openingszin",
         "Gepersonaliseerde Mail",

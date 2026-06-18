@@ -5,7 +5,7 @@ import pytest
 import respx
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from src.nodes.scrape import _clean_text, _robots_allows, _scrape_one
+from src.nodes.scrape import _clean_text, _extract_email, _find_contact_link, _find_email, _robots_allows, _scrape_one
 from src.state import new_lead
 
 
@@ -89,6 +89,59 @@ async def test_scrape_one_success_fills_ruwe_tekst():
 
     assert lead["status"] == "pending"
     assert lead["ruwe_tekst"] == "Welkom bij Testbedrijf."
+    assert lead["email"] is None
+
+
+def test_extract_email_prefers_mailto_link():
+    html = '<a href="mailto:info@peeters-fietsen.be?subject=Hallo">Mail ons</a><p>info@andersadres.be</p>'
+    assert _extract_email(html) == "info@peeters-fietsen.be"
+
+
+def test_extract_email_falls_back_to_text_pattern():
+    html = "<footer>Bereik ons via info@peeters-fietsen.be of bel ons.</footer>"
+    assert _extract_email(html) == "info@peeters-fietsen.be"
+
+
+def test_extract_email_ignores_image_filenames():
+    html = '<img src="logo@2x.png"><p>Geen echt e-mailadres hier.</p>'
+    assert _extract_email(html) is None
+
+
+def test_extract_email_returns_none_when_absent():
+    assert _extract_email("<p>Geen contactinfo op deze pagina.</p>") is None
+
+
+def test_find_contact_link_matches_href_or_text():
+    html = '<a href="/over-ons">Over ons</a><a href="/contact-ons">Neem contact op</a>'
+    assert _find_contact_link(html, "https://example.test") == "https://example.test/contact-ons"
+
+
+def test_find_contact_link_returns_none_without_match():
+    html = '<a href="/over-ons">Over ons</a>'
+    assert _find_contact_link(html, "https://example.test") is None
+
+
+@pytest.mark.asyncio
+async def test_find_email_falls_back_to_contact_page():
+    homepage_html = '<a href="/contact">Contact</a>'
+    page = AsyncMock()
+    page.content.return_value = "<p>Mail ons op info@peeters-fietsen.be</p>"
+
+    email = await _find_email(page, homepage_html, "https://example.test")
+
+    assert email == "info@peeters-fietsen.be"
+    page.goto.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_find_email_returns_none_when_contact_page_fails():
+    homepage_html = '<a href="/contact">Contact</a>'
+    page = AsyncMock()
+    page.goto.side_effect = PlaywrightTimeoutError("timeout")
+
+    email = await _find_email(page, homepage_html, "https://example.test")
+
+    assert email is None
 
 
 @pytest.mark.asyncio

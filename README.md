@@ -47,7 +47,9 @@ Argumenten:
 
 Resultaat: `data/output/leads_<regio>_<timestamp>.xlsx` met twee tabbladen:
 - **Leads** — de goedgekeurde leads, klaar voor manuele review (Bedrijfsnaam,
-  Website, Telefoon, Niche, Openingszin, Gepersonaliseerde Mail).
+  Website, Telefoon, Email, Niche, Openingszin, Gepersonaliseerde Mail). Het
+  e-mailadres wordt best-effort van de website gehaald (mailto-links, dan een
+  contactpagina) — niet elke site vermeldt het, dus deze kolom kan leeg zijn.
 - **bron_log** — elke verwerkte lead (ook geweigerde/foutieve), met bron,
   zoekterm, ophaal-timestamp, status en reden — voor traceerbaarheid.
 

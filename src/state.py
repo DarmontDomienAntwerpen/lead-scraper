@@ -24,6 +24,7 @@ class LeadState(TypedDict):
     bedrijfsnaam: str
     website: str | None
     telefoon: str | None
+    email: str | None
     ruwe_tekst: str
     niche: str
     ijsbreker: str
@@ -44,6 +45,7 @@ def new_lead(*, zoekterm: str, place_id: str, bedrijfsnaam: str,
         bedrijfsnaam=bedrijfsnaam,
         website=website,
         telefoon=telefoon,
+        email=None,
         ruwe_tekst="",
         niche="",
         ijsbreker="",
