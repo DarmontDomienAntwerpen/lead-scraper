@@ -44,7 +44,7 @@ def test_validate_mail_passes_compliant_mail():
     mail = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
         "Met AI-automatisering kunnen jullie tot 10 uur per week besparen op offertes en planning. "
-        "Mag ik je een videodemo van 1 minuut sturen? "
+        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
     assert _validate_mail(mail) == []
@@ -67,7 +67,7 @@ async def test_write_mails_accepts_compliant_first_try():
     compliant = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
         "Met AI-automatisering bespaar je tot 10 uur per week op offertes. "
-        "Mag ik je een videodemo van 1 minuut sturen? "
+        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
     fake = FakeLLM([compliant])
@@ -83,7 +83,7 @@ async def test_write_mails_regenerates_once_on_violation():
     good = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
         "Met AI-automatisering bespaar je tot 10 uur per week op offertes. "
-        "Mag ik je een videodemo van 1 minuut sturen? "
+        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
     fake = FakeLLM([bad, good])

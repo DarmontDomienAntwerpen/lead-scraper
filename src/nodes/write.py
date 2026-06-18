@@ -34,8 +34,10 @@ STRIKTE REGELS (niet onderhandelbaar):
 - Leg in 1-2 zinnen concreet uit hoe AI-automatisering specifiek voor hún niche tijd kan \
   besparen (denk aan een realistische besparing tot ongeveer 10 uur per week) - benoem \
   iets tastbaars (bv. offertes opmaken, mails beantwoorden, planning, facturatie).
-- Eindig met een laagdrempelige call-to-action: vraag of je een videodemo van 1 minuut \
-  mag opsturen.
+- Eindig met een laagdrempelige call-to-action: vraag of je een kort, vrijblijvend \
+  gesprek mag inplannen om te horen welke concrete taken of problemen bij hen veel tijd \
+  kosten. Beloof GEEN kant-en-klare demo of oplossing - het gesprek is net om hun \
+  situatie te leren kennen, niet om iets te tonen dat al af is.
 - Voeg een korte, duidelijke opt-out-zin toe (verplicht, bv. "Laat het gerust weten als \
   je dit niet wil ontvangen.").
 - Geen overdreven salesy taal, geen uitroeptekens-spam.
