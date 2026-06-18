@@ -68,7 +68,12 @@ async def _scrape_one(browser: Browser, lead: LeadState) -> None:
             await page.goto(url, timeout=SCRAPE_TIMEOUT_MS, wait_until="domcontentloaded")
             html = await page.content()
             lead["ruwe_tekst"] = _clean_text(html)
-            lead["email"] = await _find_email(page, html, url)
+            email = await _find_email(page, html, url)
+            lead["email"] = email
+            # Geen automatisch invullen/versturen - enkel de URL meegeven zodat de
+            # gebruiker zelf manueel naar het contactformulier kan gaan als er geen
+            # e-mailadres gevonden werd.
+            lead["contact_url"] = None if email else _find_contact_link(html, url)
         finally:
             await context.close()
     except PlaywrightTimeoutError:

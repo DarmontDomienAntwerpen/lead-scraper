@@ -38,6 +38,7 @@ def test_export_leads_writes_expected_columns_and_filters_status(tmp_path):
         "Website",
         "Telefoon",
         "Email",
+        "Contactformulier",
         "Niche",
         "Openingszin",
         "Gepersonaliseerde Mail",
@@ -66,3 +67,18 @@ def test_export_leads_applies_suppression(tmp_path):
 
     wb = load_workbook(path)
     assert wb["Leads"].max_row == 1  # enkel header, lead werd onderdrukt
+
+
+def test_export_leads_includes_contact_url_when_no_email(tmp_path):
+    lead = _make_lead(status="ok")
+    lead["email"] = None
+    lead["contact_url"] = "https://peeters-fietsen.be/contact"
+
+    path = export_leads([lead], regio="Antwerpen", output_dir=str(tmp_path))
+
+    wb = load_workbook(path)
+    sheet = wb["Leads"]
+    headers = [cell.value for cell in sheet[1]]
+    row = {h: c for h, c in zip(headers, [cell.value for cell in sheet[2]])}
+    assert not row["Email"]
+    assert row["Contactformulier"] == "https://peeters-fietsen.be/contact"

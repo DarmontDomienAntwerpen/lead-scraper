@@ -90,6 +90,24 @@ async def test_scrape_one_success_fills_ruwe_tekst():
     assert lead["status"] == "pending"
     assert lead["ruwe_tekst"] == "Welkom bij Testbedrijf."
     assert lead["email"] is None
+    assert lead["contact_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_scrape_one_sets_contact_url_when_no_email_found():
+    lead = _make_lead(website="https://example.test")
+    page = AsyncMock()
+    page.content.return_value = '<a href="/contact">Contact</a><p>Geen e-mail hier.</p>'
+    context = AsyncMock()
+    context.new_page.return_value = page
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with patch("src.nodes.scrape._robots_allows", AsyncMock(return_value=True)):
+        await _scrape_one(browser, lead)
+
+    assert lead["email"] is None
+    assert lead["contact_url"] == "https://example.test/contact"
 
 
 def test_extract_email_prefers_mailto_link():

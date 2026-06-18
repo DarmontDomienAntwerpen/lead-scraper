@@ -25,6 +25,7 @@ class LeadState(TypedDict):
     website: str | None
     telefoon: str | None
     email: str | None
+    contact_url: str | None  # contactpagina-URL, enkel gezet als er geen e-mailadres gevonden werd
     ruwe_tekst: str
     niche: str
     ijsbreker: str
@@ -46,6 +47,7 @@ def new_lead(*, zoekterm: str, place_id: str, bedrijfsnaam: str,
         website=website,
         telefoon=telefoon,
         email=None,
+        contact_url=None,
         ruwe_tekst="",
         niche="",
         ijsbreker="",

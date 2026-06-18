@@ -28,6 +28,7 @@ _COLUMN_WIDTHS = {
     "Website": 34,
     "Telefoon": 16,
     "Email": 30,
+    "Contactformulier": 34,
     "Niche": 24,
     "Openingszin": 50,
     "Gepersonaliseerde Mail": 70,
@@ -45,6 +46,7 @@ class Lead(BaseModel):
     website: str = Field(alias="Website")
     telefoon: str = Field(default="", alias="Telefoon")
     email: str = Field(default="", alias="Email")
+    contactformulier: str = Field(default="", alias="Contactformulier")
     niche: str = Field(alias="Niche")
     openingszin: str = Field(alias="Openingszin")
     mail: str = Field(alias="Gepersonaliseerde Mail")
@@ -56,6 +58,7 @@ class Lead(BaseModel):
             website=lead["website"] or "",
             telefoon=lead["telefoon"] or "",
             email=lead["email"] or "",
+            contactformulier=lead["contact_url"] or "",
             niche=lead["niche"],
             openingszin=lead["ijsbreker"],
             mail=lead["mail"],
