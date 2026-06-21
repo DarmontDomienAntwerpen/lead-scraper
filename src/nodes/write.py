@@ -31,9 +31,10 @@ STRIKTE REGELS (niet onderhandelbaar):
 - Lengte: maximaal 4 zinnen in totaal, geen titel, geen aanhef ("Beste ..."), geen \
   afsluiter ("Met vriendelijke groeten").
 - Open met (een lichte herformulering van) de gegeven ijsbreker.
-- Leg in 1-2 zinnen concreet uit hoe AI-automatisering specifiek voor hún niche tijd kan \
-  besparen (denk aan een realistische besparing tot ongeveer 10 uur per week) - benoem \
-  iets tastbaars (bv. offertes opmaken, mails beantwoorden, planning, facturatie).
+- Leg in 1-2 zinnen concreet uit hoe automatisering specifiek voor hún niche tijd kan \
+  besparen - benoem iets tastbaars (bv. offertes opmaken, mails beantwoorden, planning, \
+  facturatie). Noem GEEN concreet aantal uren of percentage besparing - dat verschilt te \
+  veel per bedrijf om eerlijk te kunnen beweren; blijf bij de taak zelf, niet bij een cijfer.
 - Eindig met een laagdrempelige call-to-action: vraag of je een kort, vrijblijvend \
   gesprek mag inplannen om te horen welke concrete taken of problemen bij hen veel tijd \
   kosten. Beloof GEEN kant-en-klare demo of oplossing - het gesprek is net om hun \

@@ -61,7 +61,7 @@ async def test_full_graph_runs_search_to_export_with_mixed_outcomes(tmp_path):
             if lead["status"] == "ok":
                 lead["mail"] = (
                     "Ik zag dat jullie lekdetectie aanbieden. "
-                    "Met AI-automatisering bespaar je tot 10 uur per week op planning. "
+                    "Met automatisering hou je veel tijd over op planning. "
                     "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
                     "Laat het gerust weten als je dit niet wil ontvangen."
                 )

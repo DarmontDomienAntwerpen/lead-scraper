@@ -43,7 +43,7 @@ def test_validate_mail_requires_opt_out():
 def test_validate_mail_passes_compliant_mail():
     mail = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
-        "Met AI-automatisering kunnen jullie tot 10 uur per week besparen op offertes en planning. "
+        "Met automatisering hou je veel tijd over op het opmaken van offertes en planning. "
         "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
@@ -66,7 +66,7 @@ async def test_write_mails_accepts_compliant_first_try():
     lead = _make_ok_lead()
     compliant = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
-        "Met AI-automatisering bespaar je tot 10 uur per week op offertes. "
+        "Met automatisering hou je veel tijd over op het opmaken van offertes. "
         "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
@@ -82,7 +82,7 @@ async def test_write_mails_regenerates_once_on_violation():
     bad = "Ik zag dat u een mooie website heeft."
     good = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
-        "Met AI-automatisering bespaar je tot 10 uur per week op offertes. "
+        "Met automatisering hou je veel tijd over op het opmaken van offertes. "
         "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
