@@ -5,7 +5,16 @@ import pytest
 import respx
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from src.nodes.scrape import _clean_text, _extract_email, _find_contact_link, _find_email, _robots_allows, _scrape_one
+from src.nodes.scrape import (
+    NEVERBOUNCE_URL,
+    _clean_text,
+    _extract_email,
+    _find_contact_link,
+    _find_email,
+    _robots_allows,
+    _scrape_one,
+    _verify_email,
+)
 from src.state import new_lead
 
 
@@ -90,7 +99,82 @@ async def test_scrape_one_success_fills_ruwe_tekst():
     assert lead["status"] == "pending"
     assert lead["ruwe_tekst"] == "Welkom bij Testbedrijf."
     assert lead["email"] is None
+    assert lead["email_status"] is None
     assert lead["contact_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_scrape_one_rejects_invalid_email_and_falls_back_to_contact_url():
+    lead = _make_lead(website="https://example.test")
+    page = AsyncMock()
+    page.content.return_value = (
+        '<a href="mailto:nep@example.test">Mail</a><a href="/contact">Contact</a>'
+    )
+    context = AsyncMock()
+    context.new_page.return_value = page
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with patch("src.nodes.scrape._robots_allows", AsyncMock(return_value=True)), \
+         patch("src.nodes.scrape._verify_email", AsyncMock(return_value="invalid")):
+        await _scrape_one(browser, lead)
+
+    assert lead["email"] is None
+    assert lead["email_status"] == "invalid"
+    assert lead["contact_url"] == "https://example.test/contact"
+
+
+@pytest.mark.asyncio
+async def test_scrape_one_keeps_valid_email():
+    lead = _make_lead(website="https://example.test")
+    page = AsyncMock()
+    page.content.return_value = '<a href="mailto:info@example.test">Mail</a>'
+    context = AsyncMock()
+    context.new_page.return_value = page
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with patch("src.nodes.scrape._robots_allows", AsyncMock(return_value=True)), \
+         patch("src.nodes.scrape._verify_email", AsyncMock(return_value="valid")):
+        await _scrape_one(browser, lead)
+
+    assert lead["email"] == "info@example.test"
+    assert lead["email_status"] == "valid"
+    assert lead["contact_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_verify_email_returns_none_without_api_key():
+    with patch("src.nodes.scrape.NEVERBOUNCE_API_KEY", None):
+        assert await _verify_email("info@example.test") is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_verify_email_returns_result_on_success():
+    respx.get(NEVERBOUNCE_URL).mock(
+        return_value=httpx.Response(200, json={"status": "success", "result": "valid"})
+    )
+    with patch("src.nodes.scrape.NEVERBOUNCE_API_KEY", "test-key"):
+        assert await _verify_email("info@example.test") == "valid"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_verify_email_returns_none_on_api_error():
+    respx.get(NEVERBOUNCE_URL).mock(
+        return_value=httpx.Response(200, json={"status": "auth_failure", "message": "bad key"})
+    )
+    with patch("src.nodes.scrape.NEVERBOUNCE_API_KEY", "test-key"):
+        assert await _verify_email("info@example.test") is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_verify_email_returns_none_on_http_error():
+    respx.get(NEVERBOUNCE_URL).mock(return_value=httpx.Response(500))
+    with patch("src.nodes.scrape.NEVERBOUNCE_API_KEY", "test-key"):
+        assert await _verify_email("info@example.test") is None
 
 
 @pytest.mark.asyncio

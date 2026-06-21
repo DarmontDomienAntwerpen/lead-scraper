@@ -15,6 +15,13 @@ de homepage (mailto-links, dan een regex-fallback in de zichtbare tekst). Is
 er niets gevonden, dan volgen we één link die naar een contactpagina lijkt te
 verwijzen en proberen we daar opnieuw — best-effort, faalt die stap dan blijft
 `email` leeg zonder de lead te laten mislukken.
+
+E-mailverificatie: elk gevonden e-mailadres wordt gecheckt via de NeverBounce
+single-check API. Een `invalid`/`disposable`-resultaat verwijdert het adres
+weer (en valt terug op de contactpagina-URL als die bestaat) - we willen geen
+e-mail tonen die zo goed als zeker bounct. `valid`/`catchall`/`unknown` blijft
+staan; bij een API-fout of zonder `NEVERBOUNCE_API_KEY` slaan we de check
+gewoon over en blijft het gevonden adres ongeverifieerd staan.
 """
 
 from __future__ import annotations
@@ -29,13 +36,23 @@ import httpx
 from bs4 import BeautifulSoup
 from playwright.async_api import Browser, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
-from src.config import SCRAPE_DELAY_SECONDS, SCRAPE_MAX_CHARS, SCRAPE_TIMEOUT_MS, USER_AGENT, VIEWPORT
+from src.config import (
+    NEVERBOUNCE_API_KEY,
+    SCRAPE_DELAY_SECONDS,
+    SCRAPE_MAX_CHARS,
+    SCRAPE_TIMEOUT_MS,
+    USER_AGENT,
+    VIEWPORT,
+)
 from src.state import LeadState
 
 logger = logging.getLogger(__name__)
 
 _EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 _NON_EMAIL_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
+
+NEVERBOUNCE_URL = "https://api.neverbounce.com/v4/single/check"
+_REJECTED_EMAIL_STATUSES = {"invalid", "disposable"}
 
 
 async def scrape_leads(leads: list[LeadState]) -> list[LeadState]:
@@ -69,10 +86,15 @@ async def _scrape_one(browser: Browser, lead: LeadState) -> None:
             html = await page.content()
             lead["ruwe_tekst"] = _clean_text(html)
             email = await _find_email(page, html, url)
+            email_status = await _verify_email(email) if email else None
+            if email and email_status in _REJECTED_EMAIL_STATUSES:
+                logger.info("E-mail verworpen na NeverBounce-check (%s): %s", email_status, email)
+                email = None
             lead["email"] = email
+            lead["email_status"] = email_status
             # Geen automatisch invullen/versturen - enkel de URL meegeven zodat de
             # gebruiker zelf manueel naar het contactformulier kan gaan als er geen
-            # e-mailadres gevonden werd.
+            # (geverifieerd) e-mailadres gevonden werd.
             lead["contact_url"] = None if email else _find_contact_link(html, url)
         finally:
             await context.close()
@@ -149,3 +171,27 @@ def _find_contact_link(html: str, base_url: str) -> str | None:
         if "contact" in href.lower() or "contact" in text:
             return urljoin(base_url, href)
     return None
+
+
+async def _verify_email(email: str) -> str | None:
+    """Vraagt NeverBounce om het resultaat (valid/invalid/disposable/catchall/unknown).
+
+    Geeft None terug zonder key, bij een API-fout, of bij een onverwacht antwoord -
+    in dat geval blijft het e-mailadres gewoon ongeverifieerd staan."""
+    if not NEVERBOUNCE_API_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                NEVERBOUNCE_URL, params={"key": NEVERBOUNCE_API_KEY, "email": email}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as exc:
+        logger.warning("NeverBounce HTTP-fout voor %s: %s", email, exc)
+        return None
+
+    if data.get("status") != "success":
+        logger.warning("NeverBounce-fout voor %s: %s", email, data.get("message"))
+        return None
+    return data.get("result")

@@ -32,6 +32,7 @@ playwright install chromium
 
 cp .env.example .env
 # vul nu ANTHROPIC_API_KEY en GOOGLE_PLACES_API_KEY in .env in
+# NEVERBOUNCE_API_KEY is optioneel (zie "E-mailverificatie" hieronder)
 ```
 
 ## Gebruik
@@ -47,14 +48,31 @@ Argumenten:
 
 Resultaat: `data/output/leads_<regio>_<timestamp>.xlsx` met twee tabbladen:
 - **Leads** — de goedgekeurde leads, klaar voor manuele review (Bedrijfsnaam,
-  Website, Telefoon, Email, Contactformulier, Niche, Openingszin,
-  Gepersonaliseerde Mail). Het e-mailadres wordt best-effort van de website
-  gehaald (mailto-links, dan een contactpagina) — niet elke site vermeldt het.
-  Is er geen e-mailadres gevonden maar wél een contactpagina, dan komt de URL
-  daarvan in de kolom "Contactformulier" zodat je de mail zelf kan plakken en
-  versturen via dat formulier (geen automatisch invullen/versturen).
+  Website, Telefoon, Email, Email-status, Contactformulier, Niche,
+  Openingszin, Gepersonaliseerde Mail). Het e-mailadres wordt best-effort van
+  de website gehaald (mailto-links, dan een contactpagina) — niet elke site
+  vermeldt het. Is er geen (geverifieerd) e-mailadres gevonden maar wél een
+  contactpagina, dan komt de URL daarvan in de kolom "Contactformulier" zodat
+  je de mail zelf kan plakken en versturen via dat formulier (geen
+  automatisch invullen/versturen).
 - **bron_log** — elke verwerkte lead (ook geweigerde/foutieve), met bron,
   zoekterm, ophaal-timestamp, status en reden — voor traceerbaarheid.
+
+## E-mailverificatie (NeverBounce)
+
+Elk gevonden e-mailadres wordt — als `NEVERBOUNCE_API_KEY` ingevuld is in
+`.env` — gecheckt via de NeverBounce single-check API vóórdat het in de
+Excel terechtkomt:
+
+- `invalid` of `disposable` → het adres wordt verwijderd uit "Email" (valt
+  terug op "Contactformulier" als die URL gevonden werd).
+- `valid`, `catchall` of `unknown` → het adres blijft staan; het resultaat
+  komt in de kolom "Email-status" zodat je zelf kan inschatten hoeveel
+  vertrouwen je erin hebt (vooral bij `catchall`/`unknown` is het verstandig
+  extra te controleren vóór verzending).
+- Geen key ingevuld, of de NeverBounce-call faalt → de check wordt gewoon
+  overgeslagen, het gevonden adres blijft ongeverifieerd staan. Dit is dus
+  een optionele verrijking, geen vereiste om de pipeline te laten draaien.
 
 ## Suppression-list
 

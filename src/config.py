@@ -11,6 +11,9 @@ load_dotenv()
 
 ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
 GOOGLE_PLACES_API_KEY: str | None = os.getenv("GOOGLE_PLACES_API_KEY")
+# Optioneel: zonder key wordt e-mailverificatie gewoon overgeslagen (gevonden e-mails
+# blijven dan ongeverifieerd in de export staan, niets crasht).
+NEVERBOUNCE_API_KEY: str | None = os.getenv("NEVERBOUNCE_API_KEY")
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
