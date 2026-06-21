@@ -40,6 +40,27 @@ def test_validate_mail_requires_opt_out():
     assert any("opt-out" in p for p in problemen)
 
 
+def test_validate_mail_flags_spam_trigger_words():
+    mail = (
+        "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
+        "Profiteer nu van een gratis kennismaking met korting! "
+        "Mag ik een kort gesprek inplannen? "
+        "Laat het gerust weten als je dit niet wil ontvangen."
+    )
+    problemen = _validate_mail(mail)
+    assert any("spam" in p for p in problemen)
+
+
+def test_validate_mail_flags_excessive_exclamation_marks():
+    mail = (
+        "Wow, mooie website! Echt indrukwekkend! "
+        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
+        "Laat het gerust weten als je dit niet wil ontvangen."
+    )
+    problemen = _validate_mail(mail)
+    assert any("uitroeptekens" in p for p in problemen)
+
+
 def test_validate_mail_passes_compliant_mail():
     mail = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "

@@ -41,7 +41,9 @@ STRIKTE REGELS (niet onderhandelbaar):
   situatie te leren kennen, niet om iets te tonen dat al af is.
 - Voeg een korte, duidelijke opt-out-zin toe (verplicht, bv. "Laat het gerust weten als \
   je dit niet wil ontvangen.").
-- Geen overdreven salesy taal, geen uitroeptekens-spam.
+- Geen overdreven salesy taal, geen uitroeptekens-spam. Vermijd klassieke spam-triggerwoorden \
+  zoals "gratis", "gegarandeerd", "klik hier", "actie nu", "beperkte tijd", "exclusieve aanbieding".
+- Maximaal één uitroepteken in de hele mail (idealiter geen).
 
 Geef ENKEL de platte mailtekst terug, niets anders."""
 
@@ -53,6 +55,12 @@ REGENERATE_INSTRUCTION = (
 _VERBODEN_FORMEEL = re.compile(r"\b(u|uw)\b", re.IGNORECASE)
 _OPT_OUT_PATTERN = re.compile(
     r"(opt-?out|afmelden|geen interesse|niet\s+(?:meer\s+)?(?:wil(?:t)?\s+)?ontvangen|laat[^.!?]{0,30}weten)",
+    re.IGNORECASE,
+)
+_SPAM_TRIGGER_PATTERN = re.compile(
+    r"\b(gratis|100%\s*gratis|gegarandeerd|klik\s*hier|actie\s*nu|nu\s*kopen|"
+    r"beperkte\s*tijd|exclusieve\s*aanbieding|win\s*nu|korting|"
+    r"laatste\s*kans)\b",
     re.IGNORECASE,
 )
 
@@ -76,6 +84,10 @@ def _validate_mail(mail: str) -> list[str]:
         problemen.append("gebruikt verboden uitdrukking 'omgeving van'")
     if not _OPT_OUT_PATTERN.search(mail):
         problemen.append("geen opt-out-zin aanwezig")
+    if _SPAM_TRIGGER_PATTERN.search(mail):
+        problemen.append("gebruikt een klassiek spam-triggerwoord (bv. 'gratis', 'klik hier')")
+    if mail.count("!") > 1:
+        problemen.append("te veel uitroeptekens (max 1)")
     return problemen
 
 
