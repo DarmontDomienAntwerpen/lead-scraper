@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.nodes.write import _validate_mail, write_mails
+from src.nodes.write import _validate_mail, _validate_onderwerpregel, write_mails
 from src.state import new_lead
 
 
@@ -18,6 +18,7 @@ def _make_ok_lead() -> dict:
     )
     lead["niche"] = "fietsenmaker gespecialiseerd in elektrische fietsen"
     lead["ijsbreker"] = "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen."
+    lead["haakje"] = "Intake loopt via e-mail in plaats van een gekoppeld formulier."
     lead["status"] = "ok"
     return lead
 
@@ -71,6 +72,39 @@ def test_validate_mail_passes_compliant_mail():
     assert _validate_mail(mail) == []
 
 
+def test_validate_mail_flags_mooie_website():
+    mail = (
+        "Ik zag jullie mooie website en de e-bike-herstellingen. "
+        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
+        "Laat het gerust weten als je dit niet wil ontvangen."
+    )
+    problemen = _validate_mail(mail)
+    assert any("mooie website" in p for p in problemen)
+
+
+def test_validate_mail_flags_repeated_automatisering():
+    mail = (
+        "Jullie offertes gaan via mail. Automatisering hiervan bespaart tijd, en automatisering "
+        "van de planning ook. Mag ik een kort gesprek inplannen? "
+        "Laat het gerust weten als je dit niet wil ontvangen."
+    )
+    problemen = _validate_mail(mail)
+    assert any("automatisering" in p for p in problemen)
+
+
+def test_validate_onderwerpregel_flags_empty():
+    assert _validate_onderwerpregel("") != []
+
+
+def test_validate_onderwerpregel_flags_too_many_words():
+    problemen = _validate_onderwerpregel("Dit is een veel te lange onderwerpregel met te veel woorden")
+    assert any("woorden" in p for p in problemen)
+
+
+def test_validate_onderwerpregel_passes_short_subject():
+    assert _validate_onderwerpregel("Offertes overtypen bij Peeters?") == []
+
+
 class FakeLLM:
     def __init__(self, responses: list[str]):
         self.responses = responses
@@ -85,42 +119,44 @@ class FakeLLM:
 @pytest.mark.asyncio
 async def test_write_mails_accepts_compliant_first_try():
     lead = _make_ok_lead()
-    compliant = (
-        "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
+    compliant_mail = (
+        "Jullie intake loopt via e-mail in plaats van een gekoppeld formulier. "
         "Met automatisering hou je veel tijd over op het opmaken van offertes. "
-        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
+        "Herkenbaar bij jullie? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
-    fake = FakeLLM([compliant])
+    fake = FakeLLM([f"ONDERWERP: Offertes overtypen?\nMAIL: {compliant_mail}"])
     result = await write_mails([lead], llm=fake)
-    assert result[0]["mail"] == compliant
+    assert result[0]["mail"] == compliant_mail
+    assert result[0]["onderwerpregel"] == "Offertes overtypen?"
     assert fake.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_write_mails_regenerates_once_on_violation():
     lead = _make_ok_lead()
-    bad = "Ik zag dat u een mooie website heeft."
-    good = (
-        "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
+    bad = "ONDERWERP: Hoi\nMAIL: Ik zag dat u een mooie website heeft."
+    good_mail = (
+        "Jullie intake loopt via e-mail in plaats van een gekoppeld formulier. "
         "Met automatisering hou je veel tijd over op het opmaken van offertes. "
-        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
+        "Herkenbaar bij jullie? "
         "Laat het gerust weten als je dit niet wil ontvangen."
     )
+    good = f"ONDERWERP: Offertes overtypen?\nMAIL: {good_mail}"
     fake = FakeLLM([bad, good])
     result = await write_mails([lead], llm=fake)
     assert fake.calls == 2
-    assert result[0]["mail"] == good
+    assert result[0]["mail"] == good_mail
     assert result[0]["status"] == "ok"
 
 
 @pytest.mark.asyncio
 async def test_write_mails_keeps_lead_after_failed_regeneration_but_flags_it():
     lead = _make_ok_lead()
-    bad = "Ik zag dat u een mooie website heeft."
+    bad = "ONDERWERP: Hoi\nMAIL: Ik zag dat u een mooie website heeft."
     fake = FakeLLM([bad, bad])
     result = await write_mails([lead], llm=fake)
-    assert result[0]["mail"] == bad
+    assert result[0]["mail"] == "Ik zag dat u een mooie website heeft."
     assert result[0]["status"] == "ok"
     assert "Mail-validatie" in result[0]["error_reden"]
 

@@ -41,6 +41,7 @@ from src.config import (
     SCRAPE_DELAY_SECONDS,
     SCRAPE_MAX_CHARS,
     SCRAPE_TIMEOUT_MS,
+    SIGNAL_HTML_MAX_CHARS,
     USER_AGENT,
     VIEWPORT,
 )
@@ -85,6 +86,10 @@ async def _scrape_one(browser: Browser, lead: LeadState) -> None:
             await page.goto(url, timeout=SCRAPE_TIMEOUT_MS, wait_until="domcontentloaded")
             html = await page.content()
             lead["ruwe_tekst"] = _clean_text(html)
+            # Bewaart de ongestripte HTML (al opgehaald, geen extra request) zodat de
+            # signals-node structurele zaken (forms, mailto/tel-links, widget-scripts) kan
+            # herkennen die in `ruwe_tekst` al gestript zijn.
+            lead["ruwe_html"] = html[:SIGNAL_HTML_MAX_CHARS]
             email = await _find_email(page, html, url)
             email_status = await _verify_email(email) if email else None
             if email and email_status in _REJECTED_EMAIL_STATUSES:

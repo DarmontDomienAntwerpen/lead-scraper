@@ -17,6 +17,10 @@ def _make_lead(status: str = "ok", website: str = "https://peeters-fietsen.be") 
     lead["niche"] = "fietsenmaker gespecialiseerd in elektrische fietsen"
     lead["ijsbreker"] = "Ik zag dat jullie e-bikes herstellen."
     lead["mail"] = "Korte mail tekst."
+    lead["onderwerpregel"] = "Offertes overtypen?"
+    lead["behoefte_score"] = 3
+    lead["haakje"] = "Intake loopt via e-mail."
+    lead["signalen"] = {"mailto_contact": True, "has_form": False}
     lead["status"] = status
     return lead
 
@@ -43,10 +47,20 @@ def test_export_leads_writes_expected_columns_and_filters_status(tmp_path):
         "Niche",
         "Openingszin",
         "Gepersonaliseerde Mail",
+        "Onderwerpregel",
+        "Behoefte-score",
+        "Haakje",
+        "Signalen",
     ]
     assert leads_sheet.max_row == 2  # header + 1 ok-lead
     assert leads_sheet.cell(row=2, column=1).value == "Fietsen Peeters"
     assert leads_sheet.freeze_panes == "A2"
+
+    row = {h: c.value for h, c in zip(header, leads_sheet[2])}
+    assert row["Onderwerpregel"] == "Offertes overtypen?"
+    assert row["Behoefte-score"] == 3
+    assert row["Haakje"] == "Intake loopt via e-mail."
+    assert row["Signalen"] == "mailto_contact"
 
     log_sheet = wb["bron_log"]
     assert log_sheet.max_row == 3  # header + 2 leads (ok + skipped)

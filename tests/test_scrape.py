@@ -260,3 +260,5 @@ async def test_robots_allows_respects_disallow():
         return_value=httpx.Response(200, text="User-agent: *\nDisallow: /\n")
     )
     assert await _robots_allows("https://example.test/") is False
+
+

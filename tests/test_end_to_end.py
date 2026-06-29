@@ -37,7 +37,10 @@ async def test_full_graph_runs_search_to_export_with_mixed_outcomes(tmp_path):
         return leads
 
     async def fake_scrape(batch):
-        batch[0]["ruwe_tekst"] = "Echte inhoud over loodgieterswerk."
+        # Telefoonnummer zonder form/booking-tool geeft phone_only_cta -> haalt de
+        # standaard behoefte-score-drempel (signals-node draait nu ook echt mee in deze test).
+        batch[0]["ruwe_tekst"] = "Echte inhoud over loodgieterswerk. Bel ons op 03 111 22 33."
+        batch[0]["ruwe_html"] = batch[0]["ruwe_tekst"]
         batch[1]["status"] = "error"
         batch[1]["error_reden"] = "Timeout"
         batch[2]["ruwe_tekst"] = "Cookie-muur pagina."

@@ -33,6 +33,10 @@ _COLUMN_WIDTHS = {
     "Niche": 24,
     "Openingszin": 50,
     "Gepersonaliseerde Mail": 70,
+    "Onderwerpregel": 30,
+    "Behoefte-score": 14,
+    "Haakje": 50,
+    "Signalen": 60,
 }
 
 _LOG_HEADERS = ["Bedrijfsnaam", "Zoekterm", "Bron", "Opgehaald op", "Status", "Reden"]
@@ -52,9 +56,16 @@ class Lead(BaseModel):
     niche: str = Field(alias="Niche")
     openingszin: str = Field(alias="Openingszin")
     mail: str = Field(alias="Gepersonaliseerde Mail")
+    onderwerpregel: str = Field(default="", alias="Onderwerpregel")
+    behoefte_score: int = Field(default=0, alias="Behoefte-score")
+    haakje: str = Field(default="", alias="Haakje")
+    signalen: str = Field(default="", alias="Signalen")
 
     @classmethod
     def from_lead_state(cls, lead: LeadState) -> "Lead":
+        actieve_signalen = ", ".join(
+            naam for naam, aanwezig in (lead.get("signalen") or {}).items() if aanwezig
+        )
         return cls(
             bedrijfsnaam=lead["bedrijfsnaam"],
             website=lead["website"] or "",
@@ -65,6 +76,10 @@ class Lead(BaseModel):
             niche=lead["niche"],
             openingszin=lead["ijsbreker"],
             mail=lead["mail"],
+            onderwerpregel=lead.get("onderwerpregel") or "",
+            behoefte_score=lead.get("behoefte_score") or 0,
+            haakje=lead.get("haakje") or "",
+            signalen=actieve_signalen,
         )
 
 

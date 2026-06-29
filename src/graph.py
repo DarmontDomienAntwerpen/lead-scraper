@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
 
+from src.config import MIN_BEHOEFTE_SCORE
 from src.nodes.analyze import analyze_leads
 from src.nodes.export import export_leads
 from src.nodes.scrape import scrape_leads
 from src.nodes.search import search_leads
+from src.nodes.signals import apply_signals
 from src.nodes.write import write_mails
 from src.state import PipelineState
 
@@ -28,6 +30,12 @@ async def _search_node(state: PipelineState) -> dict:
 
 async def _scrape_node(state: PipelineState) -> dict:
     leads = await scrape_leads(state["leads"])
+    return {"leads": leads}
+
+
+def _signals_node(state: PipelineState) -> dict:
+    min_score = state.get("min_behoefte_score", MIN_BEHOEFTE_SCORE)
+    leads = apply_signals(state["leads"], min_score=min_score)
     return {"leads": leads}
 
 
@@ -57,13 +65,15 @@ def build_graph():
     graph = StateGraph(PipelineState)
     graph.add_node("search", _search_node)
     graph.add_node("scrape", _scrape_node)
+    graph.add_node("signals", _signals_node)
     graph.add_node("analyze", _analyze_node)
     graph.add_node("write", _write_node)
     graph.add_node("export", _export_node)
 
     graph.set_entry_point("search")
     graph.add_conditional_edges("search", _has_active_leads, {"continue": "scrape", "skip": "export"})
-    graph.add_conditional_edges("scrape", _has_active_leads, {"continue": "analyze", "skip": "export"})
+    graph.add_conditional_edges("scrape", _has_active_leads, {"continue": "signals", "skip": "export"})
+    graph.add_conditional_edges("signals", _has_active_leads, {"continue": "analyze", "skip": "export"})
     graph.add_conditional_edges("analyze", _has_active_leads, {"continue": "write", "skip": "export"})
     graph.add_edge("write", "export")
     graph.add_edge("export", END)

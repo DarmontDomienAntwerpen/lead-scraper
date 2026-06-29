@@ -24,6 +24,19 @@ DEFAULT_MAX_LEADS = 20
 SCRAPE_DELAY_SECONDS = 2.0
 SCRAPE_TIMEOUT_MS = 15_000
 SCRAPE_MAX_CHARS = 6000
+# Ongestripte HTML voor signaaldetectie (forms/mailto/widget-scripts) wordt los van
+# ruwe_tekst bewaard, maar ook hier afgekapt zodat een uitzonderlijk grote pagina het
+# geheugen niet onnodig belast.
+SIGNAL_HTML_MAX_CHARS = 50_000
+
+# Drempel voor de behoefte-score (src/nodes/signals.py): leads die hieronder vallen worden
+# vóór analyze/write (de dure LLM-stappen) als "skipped" gemarkeerd. Score-opbouw: sterke
+# handmatige signalen (offerte_via_mail/phone_only_cta) wegen elk 2 punten, mailto_contact
+# 1 punt; elke aanwezige tool (form/booking/webshop/livechat/email-marketing) trekt 1-2 punten
+# af. Standaard 2 = minstens één écht sterk handmatig signaal vereist, niet enkel een losse
+# mailto-link. Instelbaar via --min-score of de MIN_BEHOEFTE_SCORE env-var (0 = niemand
+# uitgefilterd).
+MIN_BEHOEFTE_SCORE = int(os.getenv("MIN_BEHOEFTE_SCORE", "2"))
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
