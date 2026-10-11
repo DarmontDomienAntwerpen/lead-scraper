@@ -1,7 +1,7 @@
 [project]
 name = "lead-scraper"
 version = "0.1.0"
-description = "Lokale lead-generatie pipeline voor B2B prospectie in regio Antwerpen."
+description = "Local AI lead-generation pipeline for B2B prospecting."
 requires-python = ">=3.11"
 dependencies = [
     "langchain>=0.3.0",

@@ -20,13 +20,13 @@ from src.state import new_lead
 
 def _make_lead(website: str = "https://example.test") -> dict:
     return new_lead(
-        zoekterm="test",
+        search_term="test",
         place_id="p1",
-        bedrijfsnaam="Testbedrijf",
+        company_name="Testbedrijf",
         website=website,
-        telefoon=None,
-        bron="Google Places",
-        opgehaald_op="2026-06-18T10:00:00",
+        phone=None,
+        source="Google Places",
+        fetched_at="2026-06-18T10:00:00",
     )
 
 
@@ -66,7 +66,7 @@ async def test_scrape_one_handles_timeout_gracefully():
         await _scrape_one(browser, lead)
 
     assert lead["status"] == "error"
-    assert "Timeout" in lead["error_reden"]
+    assert "Timeout" in lead["error_reason"]
     context.close.assert_awaited_once()
 
 
@@ -79,12 +79,12 @@ async def test_scrape_one_respects_robots_disallow():
         await _scrape_one(browser, lead)
 
     assert lead["status"] == "error"
-    assert "robots.txt" in lead["error_reden"]
+    assert "robots.txt" in lead["error_reason"]
     browser.new_context.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_scrape_one_success_fills_ruwe_tekst():
+async def test_scrape_one_success_fills_raw_text():
     lead = _make_lead()
     page = AsyncMock()
     page.content.return_value = "<p>Welkom bij Testbedrijf.</p>"
@@ -97,7 +97,7 @@ async def test_scrape_one_success_fills_ruwe_tekst():
         await _scrape_one(browser, lead)
 
     assert lead["status"] == "pending"
-    assert lead["ruwe_tekst"] == "Welkom bij Testbedrijf."
+    assert lead["raw_text"] == "Welkom bij Testbedrijf."
     assert lead["email"] is None
     assert lead["email_status"] is None
     assert lead["contact_url"] is None

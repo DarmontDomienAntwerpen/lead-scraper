@@ -1,27 +1,24 @@
-"""ENGINEER: scrape-node — async Playwright + BeautifulSoup.
+"""Scrape node: async Playwright + BeautifulSoup.
 
-Robots.txt-keuze: we doen een best-effort check van robots.txt vóór elke
-scrape. Bij een expliciete disallow scrapen we niet (lead -> status=error).
-Als robots.txt niet opgehaald/geparsed kan worden, scrapen we wél door — dat
-is de gangbare conventie (een onbereikbaar robots.txt is geen disallow) en
-voorkomt dat een kapotte/afwezige robots.txt onnodig leads laat sneuvelen.
+robots.txt: a best-effort check runs before every scrape. On an explicit disallow
+the site is not scraped (lead -> status=error). If robots.txt cannot be fetched or
+parsed, scraping continues: that is the common convention (an unreachable
+robots.txt is not a disallow) and prevents losing leads to a broken robots.txt.
 
-We scrapen sequentieel met één herbruikte browser-instance en een korte
-beleefde pauze (`SCRAPE_DELAY_SECONDS`) tussen leads — geen agressieve
-parallelle requests naar kleine KMO-sites.
+Sites are scraped sequentially with one reused browser and a short, polite pause
+(`SCRAPE_DELAY_SECONDS`) between leads: no aggressive parallel requests to small
+business websites.
 
-E-mailadres: Google Places levert geen e-mailadres, dus we zoeken het zelf op
-de homepage (mailto-links, dan een regex-fallback in de zichtbare tekst). Is
-er niets gevonden, dan volgen we één link die naar een contactpagina lijkt te
-verwijzen en proberen we daar opnieuw — best-effort, faalt die stap dan blijft
-`email` leeg zonder de lead te laten mislukken.
+Email address: Google Places does not provide one, so it is looked up on the
+homepage (mailto links first, then a regex fallback on the visible text). If
+nothing is found, one link that looks like a contact page is followed and searched
+as well. This is best-effort: if it fails, `email` stays empty and the lead is kept.
 
-E-mailverificatie: elk gevonden e-mailadres wordt gecheckt via de NeverBounce
-single-check API. Een `invalid`/`disposable`-resultaat verwijdert het adres
-weer (en valt terug op de contactpagina-URL als die bestaat) - we willen geen
-e-mail tonen die zo goed als zeker bounct. `valid`/`catchall`/`unknown` blijft
-staan; bij een API-fout of zonder `NEVERBOUNCE_API_KEY` slaan we de check
-gewoon over en blijft het gevonden adres ongeverifieerd staan.
+Email verification: every address found is checked with the NeverBounce single-check
+API. An `invalid`/`disposable` result removes the address again (falling back to the
+contact page URL when there is one), since it would almost certainly bounce.
+`valid`/`catchall`/`unknown` is kept. On an API error, or without
+`NEVERBOUNCE_API_KEY`, the check is skipped and the address stays unverified.
 """
 
 from __future__ import annotations
@@ -57,7 +54,7 @@ _REJECTED_EMAIL_STATUSES = {"invalid", "disposable"}
 
 
 async def scrape_leads(leads: list[LeadState]) -> list[LeadState]:
-    """Scrapet de homepage van elke pending lead in-place en geeft de lijst terug."""
+    """Scrape the homepage of every pending lead in place and return the list."""
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         try:
@@ -76,8 +73,8 @@ async def _scrape_one(browser: Browser, lead: LeadState) -> None:
     try:
         if not await _robots_allows(url):
             lead["status"] = "error"
-            lead["error_reden"] = "robots.txt verbiedt scrapen van deze site"
-            logger.info("Overgeslagen (robots.txt): %s", url)
+            lead["error_reason"] = "robots.txt disallows scraping this site"
+            logger.info("Skipped (robots.txt): %s", url)
             return
 
         context = await browser.new_context(user_agent=USER_AGENT, viewport=VIEWPORT)
@@ -85,32 +82,31 @@ async def _scrape_one(browser: Browser, lead: LeadState) -> None:
             page = await context.new_page()
             await page.goto(url, timeout=SCRAPE_TIMEOUT_MS, wait_until="domcontentloaded")
             html = await page.content()
-            lead["ruwe_tekst"] = _clean_text(html)
-            # Bewaart de ongestripte HTML (al opgehaald, geen extra request) zodat de
-            # signals-node structurele zaken (forms, mailto/tel-links, widget-scripts) kan
-            # herkennen die in `ruwe_tekst` al gestript zijn.
-            lead["ruwe_html"] = html[:SIGNAL_HTML_MAX_CHARS]
+            lead["raw_text"] = _clean_text(html)
+            # Keep the unstripped HTML (already fetched, no extra request) so the signals
+            # node can detect structural elements (forms, mailto/tel links, widget scripts)
+            # that are stripped from `raw_text`.
+            lead["raw_html"] = html[:SIGNAL_HTML_MAX_CHARS]
             email = await _find_email(page, html, url)
             email_status = await _verify_email(email) if email else None
             if email and email_status in _REJECTED_EMAIL_STATUSES:
-                logger.info("E-mail verworpen na NeverBounce-check (%s): %s", email_status, email)
+                logger.info("Email rejected after NeverBounce check (%s): %s", email_status, email)
                 email = None
             lead["email"] = email
             lead["email_status"] = email_status
-            # Geen automatisch invullen/versturen - enkel de URL meegeven zodat de
-            # gebruiker zelf manueel naar het contactformulier kan gaan als er geen
-            # (geverifieerd) e-mailadres gevonden werd.
+            # No automatic form filling or sending: only pass the URL along, so the user
+            # can open the contact form manually when no (verified) email was found.
             lead["contact_url"] = None if email else _find_contact_link(html, url)
         finally:
             await context.close()
     except PlaywrightTimeoutError:
         lead["status"] = "error"
-        lead["error_reden"] = f"Timeout bij laden van {url}"
+        lead["error_reason"] = f"Timeout while loading {url}"
         logger.warning("Scrape timeout: %s", url)
-    except Exception as exc:  # noqa: BLE001 - elke scrape-fout mag de run niet stoppen
+    except Exception as exc:  # noqa: BLE001 - one failed scrape must not stop the run
         lead["status"] = "error"
-        lead["error_reden"] = f"Scrape-fout: {exc}"
-        logger.warning("Scrape-fout voor %s: %s", url, exc)
+        lead["error_reason"] = f"Scrape error: {exc}"
+        logger.warning("Scrape error for %s: %s", url, exc)
 
 
 async def _robots_allows(url: str) -> bool:
@@ -138,7 +134,7 @@ def _clean_text(html: str) -> str:
 
 
 async def _find_email(page: Page, homepage_html: str, base_url: str) -> str | None:
-    """Best-effort e-mailzoektocht: mailto-links/tekst op de homepage, anders één poging op de contactpagina."""
+    """Best-effort email lookup: mailto links/text on the homepage, otherwise one try on the contact page."""
     email = _extract_email(homepage_html)
     if email:
         return email
@@ -149,17 +145,17 @@ async def _find_email(page: Page, homepage_html: str, base_url: str) -> str | No
     try:
         await page.goto(contact_url, timeout=SCRAPE_TIMEOUT_MS, wait_until="domcontentloaded")
         return _extract_email(await page.content())
-    except Exception as exc:  # noqa: BLE001 - dit mag de scrape van de homepage niet ongeldig maken
-        logger.debug("Geen e-mail gevonden op contactpagina %s: %s", contact_url, exc)
+    except Exception as exc:  # noqa: BLE001 - must not invalidate the homepage scrape
+        logger.debug("No email found on contact page %s: %s", contact_url, exc)
         return None
 
 
 def _clean_email(addr: str) -> str | None:
-    """Normaliseert een ruw geëxtraheerd adres: url-decodeert (sommige sites
-    obfusceren mailto-links met percent-encoding, bv. %69nfo@... voor info@...)
-    en strip een eventueel dubbel 'mailto:'-prefix (sommige sites schrijven
-    zelf foutief href="mailto:mailto:adres@...").  Geeft None terug als het
-    resultaat geen geldig e-mailadres is, in plaats van rommel door te geven."""
+    """Normalise a raw extracted address: URL-decode it (some sites obfuscate mailto
+    links with percent-encoding, e.g. %69nfo@... for info@...) and strip a doubled
+    'mailto:' prefix (some sites wrongly write href="mailto:mailto:address@...").
+    Returns None when the result is not a valid email address, instead of passing
+    garbage along."""
     addr = unquote(addr.strip())
     while addr.lower().startswith("mailto:"):
         addr = addr[len("mailto:"):]
@@ -195,10 +191,10 @@ def _find_contact_link(html: str, base_url: str) -> str | None:
 
 
 async def _verify_email(email: str) -> str | None:
-    """Vraagt NeverBounce om het resultaat (valid/invalid/disposable/catchall/unknown).
+    """Ask NeverBounce for the result (valid/invalid/disposable/catchall/unknown).
 
-    Geeft None terug zonder key, bij een API-fout, of bij een onverwacht antwoord -
-    in dat geval blijft het e-mailadres gewoon ongeverifieerd staan."""
+    Returns None without a key, on an API error or on an unexpected response; the
+    address then simply stays unverified."""
     if not NEVERBOUNCE_API_KEY:
         return None
     try:
@@ -209,10 +205,10 @@ async def _verify_email(email: str) -> str | None:
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as exc:
-        logger.warning("NeverBounce HTTP-fout voor %s: %s", email, exc)
+        logger.warning("NeverBounce HTTP error for %s: %s", email, exc)
         return None
 
     if data.get("status") != "success":
-        logger.warning("NeverBounce-fout voor %s: %s", email, data.get("message"))
+        logger.warning("NeverBounce error for %s: %s", email, data.get("message"))
         return None
     return data.get("result")

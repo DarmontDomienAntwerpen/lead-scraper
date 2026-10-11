@@ -1,7 +1,7 @@
-"""CLI entrypoint: bouwt de graph, draait één pipeline-run, en rapporteert het resultaat.
+"""CLI entry point: builds the graph, runs one pipeline pass and reports the result.
 
-Niets wordt automatisch verstuurd — dit script produceert enkel een Excel-bestand
-dat de gebruiker manueel moet naleren vóór er ooit gemaild wordt.
+Nothing is ever sent automatically: this script only produces an Excel file that
+must be reviewed by a human before any email goes out.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import argparse
 import asyncio
 import logging
 
-from src.config import DEFAULT_MAX_LEADS, DEFAULT_REGIO, MIN_BEHOEFTE_SCORE, require_api_keys
+from src.config import DEFAULT_MAX_LEADS, DEFAULT_REGION, MIN_NEED_SCORE, require_api_keys
 from src.graph import build_graph
 from src.state import PipelineState
 
@@ -20,37 +20,40 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Lokale lead-generatie pipeline voor B2B-prospectie (Antwerpen)."
+        description="Local lead-generation pipeline for B2B prospecting."
     )
     parser.add_argument(
-        "--zoekterm", required=True, help="Bv. 'loodgieter', 'fotograaf', 'boekhouder'"
+        "--query", "--zoekterm", dest="search_term", required=True,
+        help="Type of business to search for, e.g. 'loodgieter' (plumber) or 'fotograaf'",
     )
     parser.add_argument(
-        "--max-leads", type=int, default=DEFAULT_MAX_LEADS, help=f"Standaard {DEFAULT_MAX_LEADS}"
+        "--max-leads", type=int, default=DEFAULT_MAX_LEADS, help=f"Default {DEFAULT_MAX_LEADS}"
     )
-    parser.add_argument("--regio", default=DEFAULT_REGIO, help=f"Standaard '{DEFAULT_REGIO}'")
+    parser.add_argument(
+        "--region", "--regio", dest="region", default=DEFAULT_REGION, help=f"Default '{DEFAULT_REGION}'"
+    )
     parser.add_argument(
         "--min-score",
         type=int,
-        default=MIN_BEHOEFTE_SCORE,
+        default=MIN_NEED_SCORE,
         help=(
-            f"Drempel voor de behoefte-score; leads eronder slaan analyze/write over "
-            f"(scheelt API-kosten). Standaard {MIN_BEHOEFTE_SCORE} (0 = niemand uitgefilterd)."
+            f"Minimum need score; leads below it skip the analyze/write steps "
+            f"(saves API costs). Default {MIN_NEED_SCORE} (0 = keep everyone)."
         ),
     )
     return parser.parse_args()
 
 
-async def run(zoekterm: str, regio: str, max_leads: int, min_score: int = MIN_BEHOEFTE_SCORE) -> str:
+async def run(search_term: str, region: str, max_leads: int, min_score: int = MIN_NEED_SCORE) -> str:
     require_api_keys()
     graph = build_graph()
     initial_state: PipelineState = {
-        "zoekterm": zoekterm,
-        "regio": regio,
+        "search_term": search_term,
+        "region": region,
         "max_leads": max_leads,
         "leads": [],
         "output_path": None,
-        "min_behoefte_score": min_score,
+        "min_need_score": min_score,
     }
     final_state = await graph.ainvoke(initial_state)
     return final_state["output_path"]
@@ -58,10 +61,10 @@ async def run(zoekterm: str, regio: str, max_leads: int, min_score: int = MIN_BE
 
 def main() -> None:
     args = parse_args()
-    path = asyncio.run(run(args.zoekterm, args.regio, args.max_leads, args.min_score))
-    logger.info("Pipeline klaar. Excel-bestand: %s", path)
-    print(f"\nExcel-bestand gegenereerd: {path}")
-    print("BELANGRIJK: lees elke lead manueel na vóór verzending. Niets wordt automatisch verstuurd.\n")
+    path = asyncio.run(run(args.search_term, args.region, args.max_leads, args.min_score))
+    logger.info("Pipeline finished. Excel file: %s", path)
+    print(f"\nExcel file written: {path}")
+    print("IMPORTANT: review every lead manually before sending. Nothing is sent automatically.\n")
 
 
 if __name__ == "__main__":

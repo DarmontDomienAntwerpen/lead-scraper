@@ -1,56 +1,56 @@
-from src.nodes.signals import apply_signals, compute_score, detect_signals, select_haakje
+from src.nodes.signals import apply_signals, compute_score, detect_signals, select_hook
 from src.state import new_lead
 
 
-def _make_lead(ruwe_html: str) -> dict:
+def _make_lead(raw_html: str) -> dict:
     lead = new_lead(
-        zoekterm="loodgieter",
+        search_term="loodgieter",
         place_id="p1",
-        bedrijfsnaam="Loodgieter Janssens",
+        company_name="Loodgieter Janssens",
         website="https://janssens.be",
-        telefoon=None,
-        bron="Google Places",
-        opgehaald_op="2026-06-18T10:00:00",
+        phone=None,
+        source="Google Places",
+        fetched_at="2026-06-18T10:00:00",
     )
-    lead["ruwe_html"] = ruwe_html
-    lead["ruwe_tekst"] = "fallback tekst"
+    lead["raw_html"] = raw_html
+    lead["raw_text"] = "fallback tekst"
     return lead
 
 
 def test_detect_signals_finds_mailto_and_form():
     html = '<a href="mailto:info@janssens.be">Mail</a><form><input></form>'
-    signalen = detect_signals(html)
-    assert signalen["mailto_contact"] is True
-    assert signalen["has_form"] is True
+    signal_flags = detect_signals(html)
+    assert signal_flags["mailto_contact"] is True
+    assert signal_flags["has_form"] is True
 
 
 def test_detect_signals_finds_booking_tool():
     html = '<script src="https://calendly.com/widget.js"></script>'
-    signalen = detect_signals(html)
-    assert signalen["has_booking_tool"] is True
+    signal_flags = detect_signals(html)
+    assert signal_flags["has_booking_tool"] is True
 
 
 def test_detect_signals_phone_only_cta_requires_no_booking_tool():
     html = "<p>Bel ons op 03 222 33 44 voor een afspraak.</p>"
     assert detect_signals(html)["phone_only_cta"] is True
 
-    # Een contactformulier blokkeert phone_only_cta NIET meer (form ≠ telefonische afhandeling)
+    # A contact form does NOT block phone_only_cta (a form is not phone handling)
     html_with_form = html + "<form></form>"
     assert detect_signals(html_with_form)["phone_only_cta"] is True
 
-    # Maar een echte boekingstool wel
+    # but a real booking tool does
     html_with_booking = html + '<script src="fresha.com/widget"></script>'
     assert detect_signals(html_with_booking)["phone_only_cta"] is False
 
 
-def test_detect_signals_offerte_via_mail_requires_no_form():
+def test_detect_signals_quote_via_mail_requires_no_form():
     html = "<p>Offerte aanvragen kan via een mailtje.</p>"
-    assert detect_signals(html)["offerte_via_mail"] is True
-    assert detect_signals(html + "<form></form>")["offerte_via_mail"] is False
+    assert detect_signals(html)["quote_via_mail"] is True
+    assert detect_signals(html + "<form></form>")["quote_via_mail"] is False
 
 
 def test_compute_score_rewards_manual_penalizes_tools():
-    manual_only = {"offerte_via_mail": True, "phone_only_cta": False, "mailto_contact": False}
+    manual_only = {"quote_via_mail": True, "phone_only_cta": False, "mailto_contact": False}
     assert compute_score(manual_only) == 2
 
     manual_with_tool = dict(manual_only, has_booking_tool=True)
@@ -60,28 +60,28 @@ def test_compute_score_rewards_manual_penalizes_tools():
     assert compute_score(manual_with_webshop) == 0  # zwaardere penalty (2), geklemd op 0
 
 
-def test_select_haakje_prioritizes_offerte_via_mail():
-    signalen = {"offerte_via_mail": True, "phone_only_cta": True, "mailto_contact": True}
-    assert "Offertes" in select_haakje(signalen)
+def test_select_hook_prioritizes_quote_via_mail():
+    signal_flags = {"quote_via_mail": True, "phone_only_cta": True, "mailto_contact": True}
+    assert "Offertes" in select_hook(signal_flags)
 
 
-def test_select_haakje_empty_when_no_manual_signal():
-    assert select_haakje({"has_form": True}) == ""
+def test_select_hook_empty_when_no_manual_signal():
+    assert select_hook({"has_form": True}) == ""
 
 
 def test_apply_signals_skips_leads_below_threshold():
     lead = _make_lead("<p>Modern bedrijf met formulier.</p><form></form>")
     apply_signals([lead], min_score=1)
     assert lead["status"] == "skipped"
-    assert "Behoefte-score" in lead["error_reden"]
+    assert "Need score" in lead["error_reason"]
 
 
 def test_apply_signals_keeps_leads_above_threshold():
     lead = _make_lead("<p>Offerte aanvragen via mail, bel ons op 03 222 33 44.</p>")
     apply_signals([lead], min_score=1)
     assert lead["status"] == "pending"
-    assert lead["behoefte_score"] >= 1
-    assert lead["haakje"]
+    assert lead["need_score"] >= 1
+    assert lead["hook"]
 
 
 def test_apply_signals_threshold_zero_lets_everyone_through():
@@ -100,5 +100,5 @@ def test_apply_signals_ignores_non_pending_leads():
     lead = _make_lead("<p>Offerte aanvragen via mail.</p>")
     lead["status"] = "error"
     apply_signals([lead], min_score=5)
-    assert lead["behoefte_score"] == 0
+    assert lead["need_score"] == 0
     assert lead["status"] == "error"

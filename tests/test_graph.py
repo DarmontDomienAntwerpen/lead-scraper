@@ -4,13 +4,13 @@ from src.state import new_lead
 
 def _lead_with_status(status: str) -> dict:
     lead = new_lead(
-        zoekterm="x",
+        search_term="x",
         place_id="p1",
-        bedrijfsnaam="X",
+        company_name="X",
         website="https://x.be",
-        telefoon=None,
-        bron="Google Places",
-        opgehaald_op="2026-06-18T10:00:00",
+        phone=None,
+        source="Google Places",
+        fetched_at="2026-06-18T10:00:00",
     )
     lead["status"] = status
     return lead

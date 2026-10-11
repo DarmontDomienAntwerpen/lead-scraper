@@ -1,11 +1,10 @@
-"""ENGINEER: zoeknode — Google Places Text Search + Place Details.
+"""Search node: Google Places Text Search + Place Details.
 
-We gebruiken de REST-endpoints rechtstreeks via httpx (geen `googlemaps`
-package nodig). Kostenbewust: Place Details wordt enkel opgevraagd met de
-velden die we echt nodig hebben (`website`, `formatted_phone_number`), en we
-stoppen zodra we `max_leads` bedrijven MET website hebben. Bedrijven zonder
-website worden meteen verworpen (geen scrape-/analyse-kosten op leads die we
-toch niet kunnen mailen via hun site).
+Calls the REST endpoints directly with httpx (no `googlemaps` package needed).
+Cost-aware: Place Details only requests the fields we actually use (`website`,
+`formatted_phone_number`, `reviews`), and the search stops as soon as `max_leads`
+businesses WITH a website are found. Businesses without a website are dropped
+immediately, so no scrape or analysis cost is spent on them.
 """
 
 from __future__ import annotations
@@ -24,27 +23,27 @@ logger = logging.getLogger(__name__)
 TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 DETAILS_FIELDS = "website,formatted_phone_number,reviews"
-BRON = "Google Places"
-MAX_PAGES = 3  # legacy Text Search geeft max 20 resultaten/pagina -> max 60 candidates
+SOURCE = "Google Places"
+MAX_PAGES = 3  # legacy Text Search returns max 20 results/page -> max 60 candidates
 
 
 async def search_leads(
-    zoekterm: str,
-    regio: str,
+    search_term: str,
+    region: str,
     max_leads: int,
     client: httpx.AsyncClient | None = None,
 ) -> list[LeadState]:
-    """Zoekt `{zoekterm} {regio}` op Google Places en geeft tot `max_leads` leads MET website terug."""
+    """Search `{search_term} {region}` on Google Places and return up to `max_leads` leads WITH a website."""
     if client is not None:
-        return await _search_with_client(client, zoekterm, regio, max_leads)
+        return await _search_with_client(client, search_term, region, max_leads)
     async with httpx.AsyncClient(timeout=10.0) as owned_client:
-        return await _search_with_client(owned_client, zoekterm, regio, max_leads)
+        return await _search_with_client(owned_client, search_term, region, max_leads)
 
 
 async def _search_with_client(
-    client: httpx.AsyncClient, zoekterm: str, regio: str, max_leads: int
+    client: httpx.AsyncClient, search_term: str, region: str, max_leads: int
 ) -> list[LeadState]:
-    query = f"{zoekterm} {regio}"
+    query = f"{search_term} {region}"
     leads: list[LeadState] = []
     seen_place_ids: set[str] = set()
     next_page_token: str | None = None
@@ -52,7 +51,7 @@ async def _search_with_client(
 
     while len(leads) < max_leads and page < MAX_PAGES:
         if next_page_token:
-            # Google vereist een korte vertraging voor een next_page_token geldig wordt.
+            # Google needs a short delay before a next_page_token becomes valid.
             await asyncio.sleep(2.0)
             params = {"pagetoken": next_page_token, "key": GOOGLE_PLACES_API_KEY}
         else:
@@ -65,7 +64,7 @@ async def _search_with_client(
         status = data.get("status")
         if status not in ("OK", "ZERO_RESULTS"):
             logger.error(
-                "Google Places text search faalde: %s (%s)",
+                "Google Places text search failed: %s (%s)",
                 status,
                 data.get("error_message"),
             )
@@ -85,22 +84,22 @@ async def _search_with_client(
                 continue
             website = details.get("website")
             if not website:
-                logger.debug("Lead overgeslagen (geen website): %s", name)
+                logger.debug("Lead skipped (no website): %s", name)
                 continue
 
-            reviews_tekst = " ".join(
+            reviews_text = " ".join(
                 r.get("text", "") for r in details.get("reviews", []) if r.get("text")
             )
             lead = new_lead(
-                zoekterm=zoekterm,
+                search_term=search_term,
                 place_id=place_id,
-                bedrijfsnaam=name,
+                company_name=name,
                 website=website,
-                telefoon=details.get("formatted_phone_number"),
-                bron=BRON,
-                opgehaald_op=datetime.now(timezone.utc).isoformat(),
+                phone=details.get("formatted_phone_number"),
+                source=SOURCE,
+                fetched_at=datetime.now(timezone.utc).isoformat(),
             )
-            lead["reviews_tekst"] = reviews_tekst
+            lead["reviews_text"] = reviews_text
             leads.append(lead)
 
         next_page_token = data.get("next_page_token")
@@ -108,7 +107,7 @@ async def _search_with_client(
         if not next_page_token:
             break
 
-    logger.info("Search node: %d leads met website gevonden voor '%s'", len(leads), query)
+    logger.info("Search node: found %d leads with a website for '%s'", len(leads), query)
     return leads
 
 
@@ -121,7 +120,7 @@ async def _fetch_details(client: httpx.AsyncClient, place_id: str) -> dict | Non
     if data is None:
         return None
     if data.get("status") != "OK":
-        logger.warning("Place Details faalde voor %s: %s", place_id, data.get("status"))
+        logger.warning("Place Details failed for %s: %s", place_id, data.get("status"))
         return None
     return data.get("result", {})
 
@@ -132,5 +131,5 @@ async def _get_json(client: httpx.AsyncClient, url: str, params: dict) -> dict |
         resp.raise_for_status()
         return resp.json()
     except httpx.HTTPError as exc:
-        logger.warning("HTTP-fout bij Google Places call (%s): %s", url, exc)
+        logger.warning("HTTP error on Google Places call (%s): %s", url, exc)
         return None

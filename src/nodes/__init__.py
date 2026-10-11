@@ -1,1 +1,1 @@
-"""Node-implementaties van de pipeline: search, scrape, analyze, write, export."""
+"""Pipeline node implementations: search, scrape, signals, analyze, write, export."""

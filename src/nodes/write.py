@@ -1,10 +1,12 @@
-"""OPTIMIZER: write-node — schrijft de gepersonaliseerde verkoopmail.
+"""Write node: drafts the personalised sales email.
 
-Strikte regels worden in de prompt opgelegd EN in code gevalideerd
-(taal/lengte/opt-out). Bij een schending wordt één keer hergenereerd met
-expliciete feedback. Daarna controleert een LLM-rechter op inhoudelijke
-herhalingen (dubbele zinnen, herhaalde ideeën). Slaagt de hergeneratie
-nog niet volledig, dan wordt de mail toch meegenomen maar gelogd.
+Strict rules are set in the prompt AND validated in code (tone, length, opt-out,
+spam triggers). On a violation the email is regenerated once with explicit
+feedback. An LLM judge then checks for repeated ideas across the three sentences.
+If the retry still isn't fully compliant, the email is kept but flagged for review.
+
+Prompts, validation messages and the email itself are in Dutch: the emails go to
+Flemish businesses.
 """
 
 from __future__ import annotations
@@ -85,25 +87,25 @@ MAIL: <zin 1>
 <zin 3>"""
 
 REGENERATE_INSTRUCTION = (
-    "Je vorige poging voldeed niet aan de regels ({problemen}). Herschrijf de mail van "
+    "Je vorige poging voldeed niet aan de regels ({problems}). Herschrijf de mail van "
     "nul af en volg de regels nu strikt."
 )
 
-_VERBODEN_FORMEEL = re.compile(r"\b(u|uw)\b", re.IGNORECASE)
+_FORBIDDEN_FORMAL = re.compile(r"\b(u|uw)\b", re.IGNORECASE)
 _SPAM_TRIGGER_PATTERN = re.compile(
     r"\b(gratis|100%\s*gratis|gegarandeerd|klik\s*hier|actie\s*nu|nu\s*kopen|"
     r"beperkte\s*tijd|exclusieve\s*aanbieding|win\s*nu|korting|"
     r"laatste\s*kans)\b",
     re.IGNORECASE,
 )
-_MOOIE_WEBSITE_PATTERN = re.compile(r"mooie\s+website", re.IGNORECASE)
-_AUTOMATISERING_PATTERN = re.compile(r"automatiser\w*", re.IGNORECASE)
+_GENERIC_COMPLIMENT_PATTERN = re.compile(r"mooie\s+website", re.IGNORECASE)
+_AUTOMATION_PATTERN = re.compile(r"automatiser\w*", re.IGNORECASE)
 _RESPONSE_PATTERN = re.compile(
-    r"ONDERWERP:\s*(?P<onderwerp>.+?)\s*\n+\s*MAIL:\s*(?P<mail>.+)",
+    r"ONDERWERP:\s*(?P<subject_text>.+?)\s*\n+\s*MAIL:\s*(?P<mail>.+)",
     re.IGNORECASE | re.DOTALL,
 )
 
-_EXTRA_REGEL = "Van chatbot en AI-telefonist tot WhatsApp-assistent en automatische opvolging — in principe is elk repetitief proces te automatiseren."
+_EXTRA_LINE = "Van chatbot en AI-telefonist tot WhatsApp-assistent en automatische opvolging — in principe is elk repetitief proces te automatiseren."
 
 
 class ChatLLM(Protocol):
@@ -115,32 +117,32 @@ def _build_llm() -> ChatLLM:
 
 
 def _validate_mail(mail: str) -> list[str]:
-    """Valideert alleen de 3-zins body (zonder aanhef/handtekening)."""
-    problemen: list[str] = []
-    # tel alleen echte zinnen in het body-deel (vóór de handtekening)
+    """Validate only the three-sentence body (without greeting/signature)."""
+    problems: list[str] = []
+    # only count real sentences in the body (before the signature)
     body = mail.split("Met vriendelijke groeten")[0].strip()
-    # Strip ook de extra_regel als LLM die per ongeluk toevoegde
-    body = body.replace(_EXTRA_REGEL, "").strip()
-    zinnen = [z.strip() for z in re.split(r"(?<=[.!?])\s+", body) if z.strip()]
-    if len(zinnen) > 3:
-        problemen.append(f"te veel zinnen in body ({len(zinnen)} > 3)")
-    # Detecteer letterlijk identieke zinnen
-    unieke = set(z.lower() for z in zinnen)
-    if len(unieke) < len(zinnen):
-        problemen.append("bevat letterlijk identieke zinnen")
-    if _VERBODEN_FORMEEL.search(body):
-        problemen.append("gebruikt 'u'/'uw' in plaats van 'je/jullie'")
+    # also strip the extra line in case the LLM added it
+    body = body.replace(_EXTRA_LINE, "").strip()
+    sentences = [z.strip() for z in re.split(r"(?<=[.!?])\s+", body) if z.strip()]
+    if len(sentences) > 3:
+        problems.append(f"te veel zinnen in body ({len(sentences)} > 3)")
+    # detect literally identical sentences
+    unique_items = set(z.lower() for z in sentences)
+    if len(unique_items) < len(sentences):
+        problems.append("bevat letterlijk identieke zinnen")
+    if _FORBIDDEN_FORMAL.search(body):
+        problems.append("gebruikt 'u'/'uw' in plaats van 'je/jullie'")
     if "omgeving van" in body.lower():
-        problemen.append("gebruikt verboden uitdrukking 'omgeving van'")
+        problems.append("gebruikt verboden uitdrukking 'omgeving van'")
     if _SPAM_TRIGGER_PATTERN.search(body):
-        problemen.append("gebruikt een klassiek spam-triggerwoord (bv. 'gratis', 'klik hier')")
+        problems.append("gebruikt een klassiek spam-triggerwoord (bv. 'gratis', 'klik hier')")
     if body.count("!") > 1:
-        problemen.append("te veel uitroeptekens (max 1)")
-    if _MOOIE_WEBSITE_PATTERN.search(body):
-        problemen.append("gebruikt verboden uitdrukking 'mooie website'")
-    if len(_AUTOMATISERING_PATTERN.findall(body)) > 1:
-        problemen.append("gebruikt 'automatisering' meer dan één keer")
-    return problemen
+        problems.append("te veel uitroeptekens (max 1)")
+    if _GENERIC_COMPLIMENT_PATTERN.search(body):
+        problems.append("gebruikt verboden uitdrukking 'mooie website'")
+    if len(_AUTOMATION_PATTERN.findall(body)) > 1:
+        problems.append("gebruikt 'automatisering' meer dan één keer")
+    return problems
 
 
 _JUDGE_PROMPT = (
@@ -156,8 +158,8 @@ _JUDGE_PROMPT = (
 )
 
 async def _judge_body(llm: ChatLLM, body: str) -> str | None:
-    """LLM-rechter: controleert op inhoudelijke herhalingen in de 3-zins body.
-    Geeft None terug als alles uniek is, anders de probleembeschrijving."""
+    """LLM judge: checks the three-sentence body for repeated ideas.
+    Returns None when every sentence is unique, otherwise the problem description."""
     prompt = _JUDGE_PROMPT.format(body=body)
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     result = str(response.content).strip()
@@ -166,7 +168,7 @@ async def _judge_body(llm: ChatLLM, body: str) -> str | None:
     return None
 
 
-# Cyrillische lookalike → Latijns equivalent (één-op-één mapping)
+# Cyrillic lookalike -> Latin equivalent (the model occasionally emits these)
 _CYRILLIC_TO_LATIN = str.maketrans({
     'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'х': 'x',
     'і': 'i', 'у': 'y', 'в': 'v', 'п': 'p', 'н': 'h', 'м': 'm',
@@ -179,78 +181,78 @@ _CYRILLIC_TO_LATIN = str.maketrans({
 })
 
 def _sanitize(text: str) -> str:
-    """Vervang Cyrillische lookalikes door hun Latijnse equivalent."""
+    """Replace Cyrillic lookalike characters with their Latin equivalent."""
     return text.translate(_CYRILLIC_TO_LATIN)
 
 
 def strip_body(raw_mail: str) -> str:
-    """Strip aanhef, handtekening en extra_regel uit een samengestelde mail.
-    Gebruik dit in scripts die mails lezen uit Excel vóór reassembly — zo nooit dubbels."""
+    """Remove greeting, signature and extra line from an assembled email.
+    Use this in scripts that read emails back from Excel before reassembling, to avoid duplicates."""
     mail = re.sub(r"^Beste[^\n]+,\s*\n+", "", raw_mail.strip(), flags=re.MULTILINE)
-    # Knip bij de vroegst voorkomende handtekening-marker
+    # cut at the earliest signature marker
     cut = len(mail)
     for marker in ("Vragen? Stuur", "Met vriendelijke groeten"):
         idx = mail.find(marker)
         if idx != -1:
             cut = min(cut, idx)
     mail = mail[:cut].strip()
-    mail = mail.replace(_EXTRA_REGEL, "").strip()
+    mail = mail.replace(_EXTRA_LINE, "").strip()
     return mail
 
 
-def _assemble_mail(naam: str, body: str) -> str:
-    """Voegt aanhef, extra context en handtekening toe aan de gegenereerde body."""
-    # Strip boilerplate als de LLM het toch meenam, zodat het nooit dubbel staat
-    clean = _sanitize(strip_body(body) if _EXTRA_REGEL in body else body)
-    return f"Beste {naam},\n\n{clean}\n\n{_EXTRA_REGEL}\n\n{SIGNATURE}"
+def _assemble_mail(contact_name: str, body: str) -> str:
+    """Add greeting, extra line and signature to the generated body."""
+    # strip boilerplate the LLM may have included, so it never appears twice
+    clean = _sanitize(strip_body(body) if _EXTRA_LINE in body else body)
+    return f"Beste {contact_name},\n\n{clean}\n\n{_EXTRA_LINE}\n\n{SIGNATURE}"
 
 
-def clean_subject(onderwerp: str) -> str:
-    """Vervangt em-dashes en andere non-ASCII leestekens door ASCII-equivalent in de onderwerpregel."""
-    return onderwerp.replace("—", "-").replace("–", "-").replace("‘", "'").replace("’", "'")
+def clean_subject(subject_text: str) -> str:
+    """Replace em dashes and other non-ASCII punctuation in the subject line with ASCII."""
+    return subject_text.replace("—", "-").replace("–", "-").replace("‘", "'").replace("’", "'")
 
 
-def _validate_onderwerpregel(onderwerp: str) -> list[str]:
-    problemen: list[str] = []
-    if not onderwerp:
-        problemen.append("geen onderwerpregel gegenereerd")
-        return problemen
-    woorden = onderwerp.split()
-    if len(woorden) > 6:
-        problemen.append(f"onderwerpregel te lang ({len(woorden)} > 6 woorden)")
-    return problemen
+def _validate_subject_line(subject_text: str) -> list[str]:
+    problems: list[str] = []
+    if not subject_text:
+        problems.append("geen onderwerpregel gegenereerd")
+        return problems
+    words = subject_text.split()
+    if len(words) > 6:
+        problems.append(f"onderwerpregel te lang ({len(words)} > 6 woorden)")
+    return problems
 
 
-_ONDERWERP_ONLY_PATTERN = re.compile(
-    r"ONDERWERP:\s*(?P<onderwerp>.+?)\s*\n+(?P<mail>.+)",
+_SUBJECT_ONLY_PATTERN = re.compile(
+    r"ONDERWERP:\s*(?P<subject_text>.+?)\s*\n+(?P<mail>.+)",
     re.IGNORECASE | re.DOTALL,
 )
 
 def _parse_response(raw: str) -> tuple[str, str]:
-    """Splitst het ONDERWERP/MAIL-formaat; valt terug op de volledige tekst als mail
-    wanneer het model het formaat niet volgde (mag de run nooit laten crashen)."""
-    # Probeer eerst het volledige formaat (ONDERWERP: ... MAIL: ...)
+    """Split the ONDERWERP/MAIL (subject/email) format; fall back to the full text as
+    the email when the model ignored the format (must never crash the run)."""
+    # try the full format first (ONDERWERP: ... MAIL: ...)
     match = _RESPONSE_PATTERN.search(raw)
     if match:
-        return match.group("onderwerp").strip(), match.group("mail").strip()
-    # Fallback: ONDERWERP aanwezig maar zonder "MAIL:" marker
-    match = _ONDERWERP_ONLY_PATTERN.search(raw)
+        return match.group("subject_text").strip(), match.group("mail").strip()
+    # fallback: subject present but no "MAIL:" marker
+    match = _SUBJECT_ONLY_PATTERN.search(raw)
     if match:
-        return match.group("onderwerp").strip(), match.group("mail").strip()
+        return match.group("subject_text").strip(), match.group("mail").strip()
     return "", raw.strip()
 
 
 async def _generate(
-    llm: ChatLLM, lead: LeadState, extra_instructie: str | None = None
+    llm: ChatLLM, lead: LeadState, extra_instruction: str | None = None
 ) -> tuple[str, str]:
-    haakje = lead["haakje"] or lead["ijsbreker"]
-    ijsbreker = lead.get("ijsbreker", "")
-    content = f"Bedrijf: {lead['bedrijfsnaam']}, sector: {lead['niche']}.\n"
-    if ijsbreker:
-        content += f"IJSBREKER (specifiek sitedetail): {ijsbreker}\n"
-    content += f"HAAKJE (handmatig knelpunt): {haakje}\n"
-    if extra_instructie:
-        content += f"\n{extra_instructie}\n"
+    hook = lead["hook"] or lead["icebreaker"]
+    icebreaker = lead.get("icebreaker", "")
+    content = f"Bedrijf: {lead['company_name']}, sector: {lead['niche']}.\n"
+    if icebreaker:
+        content += f"IJSBREKER (specifiek sitedetail): {icebreaker}\n"
+    content += f"HAAKJE (handmatig knelpunt): {hook}\n"
+    if extra_instruction:
+        content += f"\n{extra_instruction}\n"
     response = await llm.ainvoke(
         [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
     )
@@ -258,64 +260,64 @@ async def _generate(
 
 
 async def write_mails(leads: list[LeadState], llm: ChatLLM | None = None) -> list[LeadState]:
-    """Schrijft de mail + onderwerpregel voor elke lead met status 'ok'; muteert de leads in-place."""
+    """Write the email and subject line for every lead with status 'ok'; mutates the leads in place."""
     active_llm = llm if llm is not None else _build_llm()
 
     for lead in leads:
         if lead["status"] != "ok":
             continue
         try:
-            onderwerp, mail = await _generate(active_llm, lead)
-            problemen = _validate_mail(mail) + _validate_onderwerpregel(onderwerp)
-            if problemen:
+            subject_text, mail = await _generate(active_llm, lead)
+            problems = _validate_mail(mail) + _validate_subject_line(subject_text)
+            if problems:
                 logger.info(
-                    "Mail voor %s voldoet niet aan de regels (%s) - hergenereren",
-                    lead["bedrijfsnaam"],
-                    "; ".join(problemen),
+                    "Email for %s breaks the rules (%s) - regenerating",
+                    lead["company_name"],
+                    "; ".join(problems),
                 )
-                onderwerp, mail = await _generate(
+                subject_text, mail = await _generate(
                     active_llm,
                     lead,
-                    REGENERATE_INSTRUCTION.format(problemen="; ".join(problemen)),
+                    REGENERATE_INSTRUCTION.format(problems="; ".join(problems)),
                 )
-                problemen = _validate_mail(mail) + _validate_onderwerpregel(onderwerp)
-                if problemen:
+                problems = _validate_mail(mail) + _validate_subject_line(subject_text)
+                if problems:
                     logger.warning(
-                        "Mail voor %s voldoet ook na hergeneratie niet (%s) - manuele "
-                        "review extra belangrijk hier",
-                        lead["bedrijfsnaam"],
-                        "; ".join(problemen),
+                        "Email for %s still breaks the rules after regeneration (%s) - "
+                        "manual review especially important",
+                        lead["company_name"],
+                        "; ".join(problems),
                     )
-                    lead["error_reden"] = "Mail-validatie: " + "; ".join(problemen)
+                    lead["error_reason"] = "Email validation: " + "; ".join(problems)
 
-            # LLM-rechter: check op inhoudelijke herhalingen over de 3 zinnen
-            herhaling = await _judge_body(active_llm, mail)
-            if herhaling:
+            # LLM judge: check for repeated ideas across the three sentences
+            repetition = await _judge_body(active_llm, mail)
+            if repetition:
                 logger.info(
-                    "LLM-rechter: herhaling in mail voor %s (%s) — hergenereren",
-                    lead["bedrijfsnaam"],
-                    herhaling,
+                    "LLM judge: repetition in email for %s (%s) - regenerating",
+                    lead["company_name"],
+                    repetition,
                 )
-                onderwerp, mail = await _generate(
+                subject_text, mail = await _generate(
                     active_llm,
                     lead,
-                    f"Vorige poging bevatte herhalingen: {herhaling}. "
+                    f"Vorige poging bevatte herhalingen: {repetition}. "
                     "Schrijf 3 volledig unieke zinnen zonder enige herhaling van dezelfde gedachte of formulering.",
                 )
-                herhaling2 = await _judge_body(active_llm, mail)
-                if herhaling2:
+                repetition_retry = await _judge_body(active_llm, mail)
+                if repetition_retry:
                     logger.warning(
-                        "Nog steeds herhalingen na hergeneratie voor %s (%s) — mail toch gebruikt",
-                        lead["bedrijfsnaam"],
-                        herhaling2,
+                        "Still repetitive after regeneration for %s (%s) - keeping the email",
+                        lead["company_name"],
+                        repetition_retry,
                     )
-                    lead["error_reden"] = (lead.get("error_reden") or "") + f" | Herhaling: {herhaling2}"
+                    lead["error_reason"] = (lead.get("error_reason") or "") + f" | Repetition: {repetition_retry}"
 
-            lead["mail"] = _assemble_mail(lead["bedrijfsnaam"], mail)
-            lead["onderwerpregel"] = onderwerp
-        except Exception as exc:  # noqa: BLE001 - een kapotte mail-generatie mag de run niet stoppen
+            lead["mail"] = _assemble_mail(lead["company_name"], mail)
+            lead["subject_line"] = subject_text
+        except Exception as exc:  # noqa: BLE001 - one failed email must not stop the run
             lead["status"] = "error"
-            lead["error_reden"] = f"Mail-generatie-fout: {exc}"
-            logger.warning("Mail-generatie-fout voor %s: %s", lead["bedrijfsnaam"], exc)
+            lead["error_reason"] = f"Email generation error: {exc}"
+            logger.warning("Email generation error for %s: %s", lead["company_name"], exc)
 
     return leads

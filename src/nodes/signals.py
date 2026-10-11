@@ -1,17 +1,20 @@
-"""ARCHITECT: signals-node — regelgebaseerde detectie van handmatige processen.
+"""Signals node: rule-based detection of manual processes.
 
-Draait tussen scrape en analyze, op de al-opgehaalde `ruwe_html` (geen nieuwe requests).
-We gebruiken bewust de ongestripte HTML i.p.v. `ruwe_tekst`: structurele signalen zoals
-<form>-elementen, mailto:/tel:-links en widget-scripts (Calendly, Intercom, ...) overleven
-het tag-strippen in scrape.py niet.
+Runs between scrape and analyze, on the already fetched `raw_html` (no new requests).
+It deliberately uses the unstripped HTML instead of `raw_text`: structural signals such
+as <form> elements, mailto:/tel: links and widget scripts (Calendly, Intercom, ...) do
+not survive the tag stripping in scrape.py.
 
-Modulair per sector: `SECTOR_KEYWORD_OVERRIDES` is leeg bij default en kan per niche
-(kleine letters, zoals analyze.py die teruggeeft) aangevuld worden met extra keywords per
-signaal, zonder de basisregels (`_KEYWORDS`) aan te raken.
+Extensible per sector: `SECTOR_KEYWORD_OVERRIDES` is empty by default and can add extra
+keywords per signal for a given niche (lowercase, as returned by analyze.py) without
+touching the base rules (`_KEYWORDS`).
 
-De behoefte-score en het haakje worden hier al bepaald (vóór de dure LLM-stappen) zodat
-`apply_signals` leads onder de drempel meteen als "skipped" kan markeren - dat scheelt
-analyze- en write-calls voor leads die toch niet doorstromen.
+The need score and the hook are computed here, before the expensive LLM steps, so
+`apply_signals` can mark leads below the threshold as "skipped" right away. That saves
+analyze and write calls for leads that would not go through anyway.
+
+Keywords and hooks are in Dutch (and some French/English) because the target websites
+are Belgian.
 """
 
 from __future__ import annotations
@@ -19,24 +22,24 @@ from __future__ import annotations
 import logging
 import re
 
-from src.config import MIN_BEHOEFTE_SCORE
+from src.config import MIN_NEED_SCORE
 from src.state import LeadState
 
 logger = logging.getLogger(__name__)
 
-# Basisregels: per signaal een lijst keywords die op de lowercased HTML gezocht worden.
+# Base rules: per signal, keywords searched for in the lowercased HTML.
 _KEYWORDS: dict[str, list[str]] = {
     "has_booking_tool": [
-        # Generieke tools
+        # Generic tools
         "calendly", "acuityscheduling", "acuity", "simplybook", "reservio",
         "planity", "setmore", "booksy", "jane app", "appointy", "shore.us",
         "squareup.com", "booker", "genbook", "phorest", "timely", "shortcuts",
         "mindbody", "glofox", "zenoti",
         # Salon/beauty/wellness
         "fresha", "treatwell", "salonkee", "vagaro", "koifish",
-        # Medisch/kine
+        # Medical / physiotherapy
         "doctoranytime", "doctena", "intramed", "phy.so", "liantis",
-        # Generieke CTA's — online boeking aanwezig ook al is de tool extern geladen
+        # Generic CTAs: online booking exists even when the tool is loaded externally
         "online boeken", "boek nu", "book now", "maak een afspraak online",
         "online reserveren", "reserveer online", "afspraak online",
         "book online", "boek online", "plan je afspraak", "plan een afspraak",
@@ -52,21 +55,21 @@ _KEYWORDS: dict[str, list[str]] = {
         "mailchimp", "klaviyo",
         "schrijf je in voor onze nieuwsbrief", "inschrijven nieuwsbrief",
     ],
-    "offerte_via_mail": [
+    "quote_via_mail": [
         "offerte aanvragen", "stuur ons een mail",
         "vraag een offerte", "offerte per mail",
     ],
-    # Grote FAQ of kennisbank → kans voor RAG/chatbot die dat automatisch doorzoekt
+    # Large FAQ or knowledge base -> opportunity for a RAG chatbot
     "has_faq": [
         "veelgestelde vragen", "faq", "frequently asked questions",
         "veel gestelde vragen", "kennisbank", "helpcentrum", "help center",
     ],
-    # Auto-reply keywords → als afwezig terwijl er wel een form is, loopt opvolging handmatig
+    # Auto-reply keywords: absent while a form exists means follow-up is manual
     "has_autoresponse": [
         "automatisch antwoord", "auto-reply", "bevestigingsmail", "je ontvangt een bevestiging",
         "we nemen zo snel mogelijk contact op", "we contacteren je",
     ],
-    # Kennisintensieve sector → RAG-kans (documenten, dossiers, wetgeving doorzoeken)
+    # Knowledge-intensive sector -> RAG opportunity (documents, case files, legislation)
     "knowledge_sector": [
         "advocaat", "advocatenkantoor", "juridisch advies", "notaris", "notariaat",
         "verzekeringsmakelaar", "verzekeringsagent", "vastgoedkantoor", "immokantoor",
@@ -74,37 +77,37 @@ _KEYWORDS: dict[str, list[str]] = {
         "hr-kantoor", "personeelsdienst", "compliance", "juridische dienst",
     ],
     "has_phone_complaint": [
-        # Nederlands
+        # Dutch
         "voicemail", "niet opgenomen", "niet bereikbaar", "moeilijk bereikbaar",
         "geen antwoord", "antwoordt niet", "lang wachten", "niet teruggebeld",
         "bereikbaarheid", "niet te bereiken",
-        # Frans
+        # French
         "messagerie", "injoignable", "pas de réponse",
-        # Engels
+        # English
         "no answer", "unreachable", "couldn't reach", "went to voicemail",
     ],
 }
 
-# Vul hier per niche (lowercase) extra/overschrijvende keywords aan, bv.:
+# Add extra keywords per niche (lowercase) here, e.g.:
 # SECTOR_KEYWORD_OVERRIDES["fietsenmaker"] = {"has_booking_tool": ["herstelafspraak"]}
 SECTOR_KEYWORD_OVERRIDES: dict[str, dict[str, list[str]]] = {}
 
 _PHONE_PATTERN = re.compile(r"(\+32\s?\d(?:[\s.-]?\d){7,8}|\b0\d(?:[\s.-]?\d){7,8}\b)")
 
-# Hoe meer handmatige signalen en hoe minder tools aanwezig, hoe hoger de score.
+# More manual signals and fewer tools -> higher score.
 _MANUAL_SIGNAL_WEIGHTS = {
-    "has_phone_complaint": 3,  # sterkste signaal: klanten klagen zelf over bereikbaarheid
-    "offerte_via_mail": 2,
-    "phone_only_cta": 2,       # phone aanwezig, geen boekingstool
-    "knowledge_sector": 2,     # kennisintensieve sector → RAG-kans
-    "has_faq": 1,              # grote FAQ → chatbot/RAG-kans
+    "has_phone_complaint": 3,  # strongest signal: customers complain about reachability
+    "quote_via_mail": 2,
+    "phone_only_cta": 2,       # phone number present, no booking tool
+    "knowledge_sector": 2,     # knowledge-intensive sector -> RAG opportunity
+    "has_faq": 1,              # large FAQ -> chatbot/RAG opportunity
     "mailto_contact": 1,
-    # form_no_autoresponse telt niet mee in score (te zwak als enig signaal)
-    # maar dient wel als haakje via select_haakje()
+    # form_no_autoresponse does not add to the score (too weak on its own)
+    # but can still be used as the hook via select_hook()
 }
 _TOOL_SIGNAL_PENALTIES = {
-    # Pitch is nu breder dan telefonie — ook email/chatbot/RAG voor bedrijven mét booking.
-    # Penalty verlaagd: een booking tool sluit mail-chaos, FAQ-vragen of RAG-kansen niet uit.
+    # The pitch covers more than phone handling (email, chatbot, RAG), so a booking tool
+    # only gets a small penalty: it doesn't rule out those other opportunities.
     "has_booking_tool": 1,
     "has_webshop": 2,
     "has_livechat": 1,
@@ -123,7 +126,7 @@ def _contains_any(haystack: str, keywords: list[str]) -> bool:
 
 
 def detect_signals(html: str, niche: str | None = None) -> dict[str, bool]:
-    """Bepaalt de signaal-booleans op reeds-opgehaalde HTML; doet geen requests."""
+    """Compute the signal booleans from already fetched HTML; makes no requests."""
     lower = html.lower()
 
     has_form = "<form" in lower
@@ -132,12 +135,12 @@ def detect_signals(html: str, niche: str | None = None) -> dict[str, bool]:
     has_webshop = _contains_any(lower, _keywords_for("has_webshop", niche))
     has_livechat = _contains_any(lower, _keywords_for("has_livechat", niche))
     has_email_marketing = _contains_any(lower, _keywords_for("has_email_marketing", niche))
-    offerte_via_mail = _contains_any(lower, _keywords_for("offerte_via_mail", niche)) and not has_form
+    quote_via_mail = _contains_any(lower, _keywords_for("quote_via_mail", niche)) and not has_form
     has_phone = "tel:" in lower or bool(_PHONE_PATTERN.search(html))
     phone_only_cta = has_phone and not has_booking_tool
     has_faq = _contains_any(lower, _keywords_for("has_faq", niche))
     knowledge_sector = _contains_any(lower, _keywords_for("knowledge_sector", niche))
-    # form aanwezig maar geen auto-reply taalgebruik → opvolging verloopt handmatig
+    # form present but no auto-reply wording -> follow-up is manual
     has_autoresponse = _contains_any(lower, _keywords_for("has_autoresponse", niche))
     form_no_autoresponse = has_form and not has_autoresponse and not has_booking_tool
 
@@ -149,72 +152,72 @@ def detect_signals(html: str, niche: str | None = None) -> dict[str, bool]:
         "has_livechat": has_livechat,
         "has_email_marketing": has_email_marketing,
         "phone_only_cta": phone_only_cta,
-        "offerte_via_mail": offerte_via_mail,
+        "quote_via_mail": quote_via_mail,
         "has_faq": has_faq,
         "knowledge_sector": knowledge_sector,
         "form_no_autoresponse": form_no_autoresponse,
-        "has_phone_complaint": False,  # wordt gezet via reviews in apply_signals
+        "has_phone_complaint": False,  # set from reviews in apply_signals
     }
 
 
-def compute_score(signalen: dict[str, bool]) -> int:
-    score = sum(weight for key, weight in _MANUAL_SIGNAL_WEIGHTS.items() if signalen.get(key))
-    score -= sum(penalty for key, penalty in _TOOL_SIGNAL_PENALTIES.items() if signalen.get(key))
+def compute_score(signal_flags: dict[str, bool]) -> int:
+    score = sum(weight for key, weight in _MANUAL_SIGNAL_WEIGHTS.items() if signal_flags.get(key))
+    score -= sum(penalty for key, penalty in _TOOL_SIGNAL_PENALTIES.items() if signal_flags.get(key))
     return max(score, 0)
 
 
-def select_haakje(signalen: dict[str, bool]) -> str:
-    """Kiest één concreet Nederlands haakje — de meest opvallende handmatige of automatiseerbare flow."""
-    if signalen.get("has_phone_complaint"):
+def select_hook(signal_flags: dict[str, bool]) -> str:
+    """Pick one concrete hook (in Dutch, used in the email prompt): the most notable manual flow."""
+    if signal_flags.get("has_phone_complaint"):
         return "Klanten vermelden in reviews dat ze moeilijk telefonisch contact krijgen of op voicemail stuiten."
-    if signalen.get("knowledge_sector"):
+    if signal_flags.get("knowledge_sector"):
         return "Kennisintensieve sector: klanten stellen waarschijnlijk steeds dezelfde vragen die handmatig beantwoord worden of waarbij dossiers/documenten handmatig opgezocht worden."
-    if signalen.get("offerte_via_mail"):
+    if signal_flags.get("quote_via_mail"):
         return "Offertes worden via mail aangevraagd en wellicht handmatig verwerkt."
-    if signalen.get("phone_only_cta"):
+    if signal_flags.get("phone_only_cta"):
         return "Afspraken lopen telefonisch — geen online boekingstool gevonden op de site."
-    if signalen.get("form_no_autoresponse"):
+    if signal_flags.get("form_no_autoresponse"):
         return "Contactformulier aanwezig maar geen automatische bevestiging of opvolging gedetecteerd — leads worden waarschijnlijk handmatig opgevolgd."
-    if signalen.get("has_faq"):
+    if signal_flags.get("has_faq"):
         return "Grote FAQ-sectie aanwezig — wijst op veel herhalende klantvragen die een chatbot of kennissysteem automatisch kan afhandelen."
-    if signalen.get("mailto_contact") and not signalen.get("has_form"):
+    if signal_flags.get("mailto_contact") and not signal_flags.get("has_form"):
         return "Intake loopt via e-mail (mailto) in plaats van een gekoppeld formulier."
     return ""
 
 
-def apply_signals(leads: list[LeadState], min_score: int = MIN_BEHOEFTE_SCORE) -> list[LeadState]:
-    """Vult signalen/score/haakje voor elke pending lead en filtert onder de drempel uit
-    vóór analyze/write; muteert de leads in-place."""
+def apply_signals(leads: list[LeadState], min_score: int = MIN_NEED_SCORE) -> list[LeadState]:
+    """Fill signals, score and hook for every pending lead and filter out leads below the
+    threshold before analyze/write; mutates the leads in place."""
     for lead in leads:
         if lead["status"] != "pending":
             continue
 
-        html = lead.get("ruwe_html") or lead["ruwe_tekst"]
+        html = lead.get("raw_html") or lead["raw_text"]
         if not html:
             continue
 
-        signalen = detect_signals(html, lead.get("niche"))
+        signal_flags = detect_signals(html, lead.get("niche"))
 
-        # Reviews scannen op telefonische bereikbaarheidsklachten (geen extra request).
-        reviews = lead.get("reviews_tekst", "")
+        # Scan reviews for complaints about phone reachability (no extra request).
+        reviews = lead.get("reviews_text", "")
         if reviews and _contains_any(reviews.lower(), _keywords_for("has_phone_complaint", None)):
-            signalen["has_phone_complaint"] = True
+            signal_flags["has_phone_complaint"] = True
 
-        score = compute_score(signalen)
-        haakje = select_haakje(signalen)
+        score = compute_score(signal_flags)
+        hook = select_hook(signal_flags)
 
-        lead["signalen"] = signalen
-        lead["behoefte_score"] = score
-        lead["haakje"] = haakje
+        lead["signal_flags"] = signal_flags
+        lead["need_score"] = score
+        lead["hook"] = hook
 
         if score < min_score:
             lead["status"] = "skipped"
-            lead["error_reden"] = f"Behoefte-score {score} onder drempel {min_score}"
+            lead["error_reason"] = f"Need score {score} below threshold {min_score}"
             logger.info(
-                "Lead overgeslagen vóór analyze/write (score %d < %d): %s",
+                "Lead skipped before analyze/write (score %d < %d): %s",
                 score,
                 min_score,
-                lead["bedrijfsnaam"],
+                lead["company_name"],
             )
 
     return leads

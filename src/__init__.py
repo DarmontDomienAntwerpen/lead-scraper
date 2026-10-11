@@ -1,1 +1,1 @@
-"""Lead-generatie pipeline: search -> scrape -> analyze -> write -> export."""
+"""Lead-generation pipeline: search -> scrape -> signals -> analyze -> write -> export."""

@@ -1,12 +1,11 @@
-"""ARCHITECT: definieert de LangGraph State die tussen alle nodes stroomt.
+"""Defines the LangGraph state that flows between all nodes.
 
-Ontwerpkeuze: de graph werkt op het niveau van de volledige batch (één lijst
-van leads in de state), niet één lead per graph-invocatie. Elke node
-(search/scrape/analyze/write/export) itereert intern over `leads` en vangt
-fouten per lead af (try/except -> status="error"). Zo crasht één kapotte
-lead nooit de hele run, en blijven de overige leads gewoon doorlopen.
-Conditionele edges in graph.py routeren op batch-niveau (bv. "zijn er nog
-geldige leads over om te scraping/schrijven?").
+Design choice: the graph works on the whole batch (one list of leads in the
+state), not one lead per graph invocation. Every node (search/scrape/analyze/
+write/export) iterates over `leads` internally and catches errors per lead
+(try/except -> status="error"). One broken lead never crashes the run; the other
+leads simply continue. Conditional edges in graph.py route at batch level
+("are there still active leads left to scrape/write?").
 """
 
 from __future__ import annotations
@@ -17,68 +16,68 @@ LeadStatus = Literal["pending", "ok", "skipped", "error"]
 
 
 class LeadState(TypedDict):
-    """Alle data die voor één lead doorheen de pipeline wordt opgebouwd."""
+    """All data collected for a single lead as it moves through the pipeline."""
 
-    zoekterm: str
+    search_term: str
     place_id: str
-    bedrijfsnaam: str
+    company_name: str
     website: str | None
-    telefoon: str | None
+    phone: str | None
     email: str | None
-    email_status: str | None  # NeverBounce-resultaat: valid/invalid/disposable/catchall/unknown/None
-    contact_url: str | None  # contactpagina-URL, enkel gezet als er geen e-mailadres gevonden werd
-    ruwe_tekst: str
-    ruwe_html: str  # ongestripte HTML zoals scrape.py die al ophaalt, voor regelgebaseerde signaaldetectie
-    reviews_tekst: str  # samengevoegde Google Reviews-tekst, opgehaald in search-stap
-    signalen: dict[str, bool]  # booleans uit src/nodes/signals.py (mailto_contact, has_form, ...)
-    behoefte_score: int  # hoe meer handmatige signalen/hoe minder tools, hoe hoger
-    haakje: str  # concreet Nederlands signaal-haakje voor de pitch, bv. "intake loopt via mail"
+    email_status: str | None  # NeverBounce result: valid/invalid/disposable/catchall/unknown/None
+    contact_url: str | None  # contact page URL, only set when no email address was found
+    raw_text: str
+    raw_html: str  # unstripped HTML from scrape.py, used for rule-based signal detection
+    reviews_text: str  # combined Google Reviews text, fetched in the search step
+    signal_flags: dict[str, bool]  # booleans from src/nodes/signals.py (mailto_contact, has_form, ...)
+    need_score: int  # higher = more manual processes and fewer tools
+    hook: str  # concrete (Dutch) pain point for the pitch, e.g. "intake loopt via mail"
     niche: str
-    ijsbreker: str
-    onderwerpregel: str  # max 6 woorden, gegenereerd samen met de mail
+    icebreaker: str
+    subject_line: str  # max 6 words, generated together with the email
     mail: str
     status: LeadStatus
-    error_reden: str | None
-    bron: str
-    opgehaald_op: str  # ISO-timestamp van het search-moment
+    error_reason: str | None
+    source: str
+    fetched_at: str  # ISO timestamp of the search
 
 
-def new_lead(*, zoekterm: str, place_id: str, bedrijfsnaam: str,
-             website: str | None, telefoon: str | None, bron: str,
-             opgehaald_op: str) -> LeadState:
-    """Fabriek voor een verse LeadState met lege/standaard velden."""
+def new_lead(*, search_term: str, place_id: str, company_name: str,
+             website: str | None, phone: str | None, source: str,
+             fetched_at: str) -> LeadState:
+    """Factory for a fresh LeadState with empty/default fields."""
     return LeadState(
-        zoekterm=zoekterm,
+        search_term=search_term,
         place_id=place_id,
-        bedrijfsnaam=bedrijfsnaam,
+        company_name=company_name,
         website=website,
-        telefoon=telefoon,
+        phone=phone,
         email=None,
         email_status=None,
         contact_url=None,
-        ruwe_tekst="",
-        ruwe_html="",
-        reviews_tekst="",
-        signalen={},
-        behoefte_score=0,
-        haakje="",
+        raw_text="",
+        raw_html="",
+        reviews_text="",
+        signal_flags={},
+        need_score=0,
+        hook="",
         niche="",
-        ijsbreker="",
-        onderwerpregel="",
+        icebreaker="",
+        subject_line="",
         mail="",
         status="pending",
-        error_reden=None,
-        bron=bron,
-        opgehaald_op=opgehaald_op,
+        error_reason=None,
+        source=source,
+        fetched_at=fetched_at,
     )
 
 
 class PipelineState(TypedDict):
-    """De top-level graph state: run-parameters + de lijst leads die groeit/verandert per node."""
+    """Top-level graph state: run parameters plus the list of leads each node updates."""
 
-    zoekterm: str
-    regio: str
+    search_term: str
+    region: str
     max_leads: int
     leads: list[LeadState]
     output_path: str | None
-    min_behoefte_score: int  # drempel voor de signals-node; ontbreekt hij, dan valt graph.py terug op config.MIN_BEHOEFTE_SCORE
+    min_need_score: int  # threshold for the signals node; graph.py falls back to config.MIN_NEED_SCORE

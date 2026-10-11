@@ -6,21 +6,21 @@ from src.state import new_lead
 
 def _make_lead(status: str = "ok", website: str = "https://peeters-fietsen.be") -> dict:
     lead = new_lead(
-        zoekterm="fietsenmaker",
+        search_term="fietsenmaker",
         place_id="p1",
-        bedrijfsnaam="Fietsen Peeters",
+        company_name="Fietsen Peeters",
         website=website,
-        telefoon="03 111 22 33",
-        bron="Google Places",
-        opgehaald_op="2026-06-18T10:00:00",
+        phone="03 111 22 33",
+        source="Google Places",
+        fetched_at="2026-06-18T10:00:00",
     )
     lead["niche"] = "fietsenmaker gespecialiseerd in elektrische fietsen"
-    lead["ijsbreker"] = "Ik zag dat jullie e-bikes herstellen."
+    lead["icebreaker"] = "Ik zag dat jullie e-bikes herstellen."
     lead["mail"] = "Korte mail tekst."
-    lead["onderwerpregel"] = "Offertes overtypen?"
-    lead["behoefte_score"] = 3
-    lead["haakje"] = "Intake loopt via e-mail."
-    lead["signalen"] = {"mailto_contact": True, "has_form": False}
+    lead["subject_line"] = "Offertes overtypen?"
+    lead["need_score"] = 3
+    lead["hook"] = "Intake loopt via e-mail."
+    lead["signal_flags"] = {"mailto_contact": True, "has_form": False}
     lead["status"] = status
     return lead
 
@@ -30,39 +30,39 @@ def test_export_leads_writes_expected_columns_and_filters_status(tmp_path):
     skipped_lead = _make_lead(status="skipped", website="https://andere.be")
     skipped_lead["place_id"] = "p2"
 
-    path = export_leads([ok_lead, skipped_lead], regio="Antwerpen", output_dir=str(tmp_path))
+    path = export_leads([ok_lead, skipped_lead], region="Antwerpen", output_dir=str(tmp_path))
 
     wb = load_workbook(path)
-    assert wb.sheetnames == ["Leads", "bron_log"]
+    assert wb.sheetnames == ["Leads", "audit_log"]
 
     leads_sheet = wb["Leads"]
     header = [cell.value for cell in leads_sheet[1]]
     assert header == COLUMN_HEADERS == [
-        "Bedrijfsnaam",
+        "Company",
         "Website",
-        "Telefoon",
+        "Phone",
         "Email",
-        "Email-status",
-        "Contactformulier",
+        "Email status",
+        "Contact form",
         "Niche",
-        "Openingszin",
-        "Gepersonaliseerde Mail",
-        "Onderwerpregel",
-        "Behoefte-score",
-        "Haakje",
-        "Signalen",
+        "Opening line",
+        "Personalised email",
+        "Subject line",
+        "Need score",
+        "Hook",
+        "Signals",
     ]
     assert leads_sheet.max_row == 2  # header + 1 ok-lead
     assert leads_sheet.cell(row=2, column=1).value == "Fietsen Peeters"
     assert leads_sheet.freeze_panes == "A2"
 
     row = {h: c.value for h, c in zip(header, leads_sheet[2])}
-    assert row["Onderwerpregel"] == "Offertes overtypen?"
-    assert row["Behoefte-score"] == 3
-    assert row["Haakje"] == "Intake loopt via e-mail."
-    assert row["Signalen"] == "mailto_contact"
+    assert row["Subject line"] == "Offertes overtypen?"
+    assert row["Need score"] == 3
+    assert row["Hook"] == "Intake loopt via e-mail."
+    assert row["Signals"] == "mailto_contact"
 
-    log_sheet = wb["bron_log"]
+    log_sheet = wb["audit_log"]
     assert log_sheet.max_row == 3  # header + 2 leads (ok + skipped)
 
 
@@ -76,7 +76,7 @@ def test_export_leads_applies_suppression(tmp_path):
     export_module.load_suppression_domains = lambda path=None: original(str(suppression_path))
     try:
         lead = _make_lead(status="ok")
-        path = export_leads([lead], regio="Antwerpen", output_dir=str(tmp_path))
+        path = export_leads([lead], region="Antwerpen", output_dir=str(tmp_path))
     finally:
         export_module.load_suppression_domains = original
 
@@ -89,14 +89,14 @@ def test_export_leads_includes_contact_url_when_no_email(tmp_path):
     lead["email"] = None
     lead["contact_url"] = "https://peeters-fietsen.be/contact"
 
-    path = export_leads([lead], regio="Antwerpen", output_dir=str(tmp_path))
+    path = export_leads([lead], region="Antwerpen", output_dir=str(tmp_path))
 
     wb = load_workbook(path)
     sheet = wb["Leads"]
     headers = [cell.value for cell in sheet[1]]
     row = {h: c for h, c in zip(headers, [cell.value for cell in sheet[2]])}
     assert not row["Email"]
-    assert row["Contactformulier"] == "https://peeters-fietsen.be/contact"
+    assert row["Contact form"] == "https://peeters-fietsen.be/contact"
 
 
 def test_export_leads_includes_email_status(tmp_path):
@@ -104,11 +104,11 @@ def test_export_leads_includes_email_status(tmp_path):
     lead["email"] = "info@peeters-fietsen.be"
     lead["email_status"] = "catchall"
 
-    path = export_leads([lead], regio="Antwerpen", output_dir=str(tmp_path))
+    path = export_leads([lead], region="Antwerpen", output_dir=str(tmp_path))
 
     wb = load_workbook(path)
     sheet = wb["Leads"]
     headers = [cell.value for cell in sheet[1]]
     row = {h: c for h, c in zip(headers, [cell.value for cell in sheet[2]])}
     assert row["Email"] == "info@peeters-fietsen.be"
-    assert row["Email-status"] == "catchall"
+    assert row["Email status"] == "catchall"

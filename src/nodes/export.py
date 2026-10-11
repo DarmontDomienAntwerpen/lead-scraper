@@ -1,9 +1,9 @@
-"""OPTIMIZER: export-node — Pydantic-validatie + Excel-export.
+"""Export node: Pydantic validation + Excel export.
 
-Past de suppression-list toe (compliance.py), bouwt het Pydantic `Lead`-model
-voor elke goedgekeurde lead, en schrijft een Excel-bestand met twee tabs:
-"Leads" (de export voor manuele review/verzending) en "bron_log" (volledige
-traceerbaarheid: elke lead, ook geweigerde/foutieve, met bron en timestamp).
+Applies the suppression list (compliance.py), builds the Pydantic `Lead` model for
+every approved lead, and writes an Excel file with two sheets: "Leads" (for manual
+review and sending) and "audit_log" (full traceability: every lead, including
+rejected or failed ones, with source and timestamp).
 """
 
 from __future__ import annotations
@@ -24,70 +24,70 @@ from src.state import LeadState
 logger = logging.getLogger(__name__)
 
 _COLUMN_WIDTHS = {
-    "Bedrijfsnaam": 28,
+    "Company": 28,
     "Website": 34,
-    "Telefoon": 16,
+    "Phone": 16,
     "Email": 30,
-    "Email-status": 16,
-    "Contactformulier": 34,
+    "Email status": 16,
+    "Contact form": 34,
     "Niche": 24,
-    "Openingszin": 50,
-    "Gepersonaliseerde Mail": 70,
-    "Onderwerpregel": 30,
-    "Behoefte-score": 14,
-    "Haakje": 50,
-    "Signalen": 60,
+    "Opening line": 50,
+    "Personalised email": 70,
+    "Subject line": 30,
+    "Need score": 14,
+    "Hook": 50,
+    "Signals": 60,
 }
 
-_LOG_HEADERS = ["Bedrijfsnaam", "Zoekterm", "Bron", "Opgehaald op", "Status", "Reden"]
+_LOG_HEADERS = ["Company", "Search term", "Source", "Fetched at", "Status", "Reason"]
 
 
 class Lead(BaseModel):
-    """Eén goedgekeurde lead, exact de kolommen/volgorde die de gebruiker manueel naleest."""
+    """One approved lead: exactly the columns, in order, that the user reviews manually."""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    bedrijfsnaam: str = Field(alias="Bedrijfsnaam")
+    company_name: str = Field(alias="Company")
     website: str = Field(alias="Website")
-    telefoon: str = Field(default="", alias="Telefoon")
+    phone: str = Field(default="", alias="Phone")
     email: str = Field(default="", alias="Email")
-    email_status: str = Field(default="", alias="Email-status")
-    contactformulier: str = Field(default="", alias="Contactformulier")
+    email_status: str = Field(default="", alias="Email status")
+    contact_form: str = Field(default="", alias="Contact form")
     niche: str = Field(alias="Niche")
-    openingszin: str = Field(alias="Openingszin")
-    mail: str = Field(alias="Gepersonaliseerde Mail")
-    onderwerpregel: str = Field(default="", alias="Onderwerpregel")
-    behoefte_score: int = Field(default=0, alias="Behoefte-score")
-    haakje: str = Field(default="", alias="Haakje")
-    signalen: str = Field(default="", alias="Signalen")
+    opening_line: str = Field(alias="Opening line")
+    mail: str = Field(alias="Personalised email")
+    subject_line: str = Field(default="", alias="Subject line")
+    need_score: int = Field(default=0, alias="Need score")
+    hook: str = Field(default="", alias="Hook")
+    signal_flags: str = Field(default="", alias="Signals")
 
     @classmethod
     def from_lead_state(cls, lead: LeadState) -> "Lead":
-        actieve_signalen = ", ".join(
-            naam for naam, aanwezig in (lead.get("signalen") or {}).items() if aanwezig
+        active_signals = ", ".join(
+            signal_name for signal_name, present in (lead.get("signal_flags") or {}).items() if present
         )
         return cls(
-            bedrijfsnaam=lead["bedrijfsnaam"],
+            company_name=lead["company_name"],
             website=lead["website"] or "",
-            telefoon=lead["telefoon"] or "",
+            phone=lead["phone"] or "",
             email=lead["email"] or "",
             email_status=lead["email_status"] or "",
-            contactformulier=lead["contact_url"] or "",
+            contact_form=lead["contact_url"] or "",
             niche=lead["niche"],
-            openingszin=lead["ijsbreker"],
+            opening_line=lead["icebreaker"],
             mail=lead["mail"],
-            onderwerpregel=lead.get("onderwerpregel") or "",
-            behoefte_score=lead.get("behoefte_score") or 0,
-            haakje=lead.get("haakje") or "",
-            signalen=actieve_signalen,
+            subject_line=lead.get("subject_line") or "",
+            need_score=lead.get("need_score") or 0,
+            hook=lead.get("hook") or "",
+            signal_flags=active_signals,
         )
 
 
 COLUMN_HEADERS: list[str] = [field.alias for field in Lead.model_fields.values()]
 
 
-def export_leads(leads: list[LeadState], regio: str, output_dir: str = OUTPUT_DIR) -> str:
-    """Past compliance toe, schrijft de Excel en geeft het bestandspad terug."""
+def export_leads(leads: list[LeadState], region: str, output_dir: str = OUTPUT_DIR) -> str:
+    """Apply compliance rules, write the Excel file and return its path."""
     suppression_domains = load_suppression_domains()
     apply_suppression(leads, suppression_domains)
 
@@ -98,16 +98,16 @@ def export_leads(leads: list[LeadState], regio: str, output_dir: str = OUTPUT_DI
     leads_sheet.title = "Leads"
     _write_leads_sheet(leads_sheet, approved)
 
-    log_sheet = workbook.create_sheet("bron_log")
+    log_sheet = workbook.create_sheet("audit_log")
     _write_log_sheet(log_sheet, leads)
 
     os.makedirs(output_dir, exist_ok=True)
-    filename = f"leads_{regio.lower()}_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
+    filename = f"leads_{region.lower()}_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
     path = os.path.join(output_dir, filename)
     workbook.save(path)
 
     logger.info(
-        "Excel geëxporteerd naar %s (%d goedgekeurde leads van %d totaal)",
+        "Excel exported to %s (%d approved leads out of %d)",
         path,
         len(approved),
         len(leads),
@@ -126,7 +126,7 @@ def _write_leads_sheet(sheet, approved_leads: list[Lead]) -> None:
         values = lead.model_dump(by_alias=True)
         sheet.append([values[header] for header in COLUMN_HEADERS])
 
-    mail_col = COLUMN_HEADERS.index("Gepersonaliseerde Mail") + 1
+    mail_col = COLUMN_HEADERS.index("Personalised email") + 1
     for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row, min_col=mail_col, max_col=mail_col):
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
@@ -144,12 +144,12 @@ def _write_log_sheet(sheet, all_leads: list[LeadState]) -> None:
     for lead in all_leads:
         sheet.append(
             [
-                lead["bedrijfsnaam"],
-                lead["zoekterm"],
-                lead["bron"],
-                lead["opgehaald_op"],
+                lead["company_name"],
+                lead["search_term"],
+                lead["source"],
+                lead["fetched_at"],
                 lead["status"],
-                lead.get("error_reden") or "",
+                lead.get("error_reason") or "",
             ]
         )
 

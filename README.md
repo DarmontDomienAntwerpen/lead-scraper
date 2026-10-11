@@ -77,13 +77,15 @@ Fill in `ANTHROPIC_API_KEY` and `GOOGLE_PLACES_API_KEY`. Optionally, copy `data/
 ### Run
 From the command line:
 ```bash
-python main.py --zoekterm "loodgieter" --regio Antwerpen --max-leads 20
+python main.py --query "loodgieter" --region Antwerpen --max-leads 20
 ```
 Or with the web interface:
 ```bash
 streamlit run app.py
 ```
-The result is written to `data/output/leads_<region>_<timestamp>.xlsx`.
+The result is written to `data/output/leads_<region>_<timestamp>.xlsx`, with a **Leads** sheet for review and an **audit_log** sheet that lists every lead with its source and the reason it was kept or rejected.
+
+The code and interface are in English. The search terms, detection keywords and generated emails are in Dutch, because the target businesses are Flemish.
 
 ## Running the tests
 ```bash

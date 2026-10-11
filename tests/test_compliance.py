@@ -4,13 +4,13 @@ from src.state import new_lead
 
 def _make_lead(website: str, status: str = "ok") -> dict:
     lead = new_lead(
-        zoekterm="test",
+        search_term="test",
         place_id="p1",
-        bedrijfsnaam="Testbedrijf",
+        company_name="Testbedrijf",
         website=website,
-        telefoon=None,
-        bron="Google Places",
-        opgehaald_op="2026-06-18T10:00:00",
+        phone=None,
+        source="Google Places",
+        fetched_at="2026-06-18T10:00:00",
     )
     lead["status"] = status
     return lead
@@ -31,7 +31,7 @@ def test_apply_suppression_marks_matching_domain_as_skipped():
     lead = _make_lead("https://www.geblokkeerd.be/contact")
     apply_suppression([lead], {"geblokkeerd.be"})
     assert lead["status"] == "skipped"
-    assert "suppression" in lead["error_reden"].lower()
+    assert "suppression" in lead["error_reason"].lower()
 
 
 def test_apply_suppression_leaves_other_leads_untouched():

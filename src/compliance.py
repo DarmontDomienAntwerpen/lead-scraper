@@ -1,12 +1,11 @@
-"""ARCHITECT/OPTIMIZER: compliance — suppression-list en bron-traceerbaarheid.
+"""Compliance: suppression list and source traceability.
 
-Twee verantwoordelijkheden:
-1. `load_suppression_domains` / `apply_suppression`: domeinen op de
-   suppression-list worden nooit meegenomen in de export, ongeacht hoe goed
-   de rest van de pipeline ze beoordeelde.
-2. Elke `LeadState` draagt al `bron`, `opgehaald_op` en `zoekterm` (zie
-   state.py) zodat export.py dit kan hergebruiken voor het "bron_log"-tabblad
-   — geen aparte logstructuur nodig.
+Two responsibilities:
+1. `load_suppression_domains` / `apply_suppression`: domains on the suppression
+   list are never exported, however well the rest of the pipeline scored them.
+2. Every `LeadState` already carries `source`, `fetched_at` and `search_term`
+   (see state.py), so export.py reuses them for the audit-log sheet; no
+   separate log structure is needed.
 """
 
 from __future__ import annotations
@@ -21,8 +20,8 @@ from src.state import LeadState
 
 logger = logging.getLogger(__name__)
 
-# Publieke e-maildiensten mogen nooit als bedrijfsdomein op de suppression-list komen:
-# één zelfstandige met een gmail-adres zou anders alle toekomstige gmail-leads blokkeren.
+# Public email providers must never be suppressed as a company domain: one freelancer
+# with a gmail address would otherwise block every future gmail lead.
 FREEMAIL_DOMAINS = {
     "gmail.com", "hotmail.com", "outlook.com", "live.com", "yahoo.com",
     "icloud.com", "telenet.be", "skynet.be", "proximus.be",
@@ -30,7 +29,7 @@ FREEMAIL_DOMAINS = {
 
 
 def is_suppressible_domain(domain: str) -> bool:
-    """False voor publieke maildiensten - die horen nooit op de suppression-list."""
+    """False for public email providers: they never belong on the suppression list."""
     return domain.lower() not in FREEMAIL_DOMAINS
 
 
@@ -42,9 +41,9 @@ def _domain(url: str | None) -> str | None:
 
 
 def load_suppression_domains(path: str = SUPPRESSION_CSV) -> set[str]:
-    """Leest suppression.csv (kolom 'domein' of 'domain'). Ontbrekend bestand = lege set."""
+    """Read suppression.csv (column 'domein' or 'domain'). A missing file means an empty set."""
     if not os.path.exists(path):
-        logger.info("Geen suppression.csv gevonden op %s - er wordt niets uitgesloten.", path)
+        logger.info("No suppression.csv found at %s - nothing will be excluded.", path)
         return set()
 
     domains: set[str] = set()
@@ -58,7 +57,7 @@ def load_suppression_domains(path: str = SUPPRESSION_CSV) -> set[str]:
 
 
 def apply_suppression(leads: list[LeadState], suppression_domains: set[str]) -> list[LeadState]:
-    """Zet status van elke 'ok'-lead op een suppressed domein naar 'skipped'. Muteert in-place."""
+    """Mark every 'ok' lead on a suppressed domain as 'skipped'. Mutates in place."""
     if not suppression_domains:
         return leads
     for lead in leads:
@@ -67,6 +66,6 @@ def apply_suppression(leads: list[LeadState], suppression_domains: set[str]) -> 
         domain = _domain(lead["website"])
         if domain and domain in suppression_domains:
             lead["status"] = "skipped"
-            lead["error_reden"] = "Domein staat op de suppression-list"
-            logger.info("Lead onderdrukt (suppression-list): %s (%s)", lead["bedrijfsnaam"], domain)
+            lead["error_reason"] = "Domain is on the suppression list"
+            logger.info("Lead suppressed (suppression list): %s (%s)", lead["company_name"], domain)
     return leads

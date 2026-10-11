@@ -41,9 +41,9 @@ async def test_search_leads_filters_no_website_and_dedupes():
         leads = await search_leads("bakker", "Antwerpen", max_leads=20, client=client)
 
     assert len(leads) == 1
-    assert leads[0]["bedrijfsnaam"] == "Bakkerij Janssens"
+    assert leads[0]["company_name"] == "Bakkerij Janssens"
     assert leads[0]["website"] == "https://janssens.be"
-    assert leads[0]["telefoon"] == "03 123 45 67"
+    assert leads[0]["phone"] == "03 123 45 67"
     assert leads[0]["status"] == "pending"
 
 
