@@ -27,35 +27,61 @@ logger = logging.getLogger(__name__)
 # Basisregels: per signaal een lijst keywords die op de lowercased HTML gezocht worden.
 _KEYWORDS: dict[str, list[str]] = {
     "has_booking_tool": [
-        "calendly",
-        "acuityscheduling",
-        "acuity",
-        "afspraak maken",
-        "online boeken",
-        "reserveer",
-        "book now",
-        "boek nu",
+        # Generieke tools
+        "calendly", "acuityscheduling", "acuity", "simplybook", "reservio",
+        "planity", "setmore", "booksy", "jane app", "appointy", "shore.us",
+        "squareup.com", "booker", "genbook", "phorest", "timely", "shortcuts",
+        "mindbody", "glofox", "zenoti",
+        # Salon/beauty/wellness
+        "fresha", "treatwell", "salonkee", "vagaro", "koifish",
+        # Medisch/kine
+        "doctoranytime", "doctena", "intramed", "phy.so", "liantis",
+        # Generieke CTA's — online boeking aanwezig ook al is de tool extern geladen
+        "online boeken", "boek nu", "book now", "maak een afspraak online",
+        "online reserveren", "reserveer online", "afspraak online",
+        "book online", "boek online", "plan je afspraak", "plan een afspraak",
+        "afspraak plannen", "afspraakonline", "online boeking", "online booking",
+        "afspraak inplannen", "maak hier een afspraak", "afspraak via onze website",
     ],
     "has_webshop": [
-        "shopify",
-        "woocommerce",
-        "winkelwagen",
-        "add to cart",
-        "in winkelwagen",
-        "checkout",
+        "shopify", "woocommerce", "winkelwagen", "add to cart",
+        "in winkelwagen", "checkout",
     ],
-    "has_livechat": ["intercom", "crisp.chat", "tawk.to", "drift"],
+    "has_livechat": ["intercom", "crisp.chat", "tawk.to", "drift", "tidio", "freshchat", "hubspot"],
     "has_email_marketing": [
-        "mailchimp",
-        "klaviyo",
-        "schrijf je in voor onze nieuwsbrief",
-        "inschrijven nieuwsbrief",
+        "mailchimp", "klaviyo",
+        "schrijf je in voor onze nieuwsbrief", "inschrijven nieuwsbrief",
     ],
     "offerte_via_mail": [
-        "offerte aanvragen",
-        "stuur ons een mail",
-        "vraag een offerte",
-        "offerte per mail",
+        "offerte aanvragen", "stuur ons een mail",
+        "vraag een offerte", "offerte per mail",
+    ],
+    # Grote FAQ of kennisbank → kans voor RAG/chatbot die dat automatisch doorzoekt
+    "has_faq": [
+        "veelgestelde vragen", "faq", "frequently asked questions",
+        "veel gestelde vragen", "kennisbank", "helpcentrum", "help center",
+    ],
+    # Auto-reply keywords → als afwezig terwijl er wel een form is, loopt opvolging handmatig
+    "has_autoresponse": [
+        "automatisch antwoord", "auto-reply", "bevestigingsmail", "je ontvangt een bevestiging",
+        "we nemen zo snel mogelijk contact op", "we contacteren je",
+    ],
+    # Kennisintensieve sector → RAG-kans (documenten, dossiers, wetgeving doorzoeken)
+    "knowledge_sector": [
+        "advocaat", "advocatenkantoor", "juridisch advies", "notaris", "notariaat",
+        "verzekeringsmakelaar", "verzekeringsagent", "vastgoedkantoor", "immokantoor",
+        "accountant", "fiscalist", "belastingadvies", "sociale secretariaat",
+        "hr-kantoor", "personeelsdienst", "compliance", "juridische dienst",
+    ],
+    "has_phone_complaint": [
+        # Nederlands
+        "voicemail", "niet opgenomen", "niet bereikbaar", "moeilijk bereikbaar",
+        "geen antwoord", "antwoordt niet", "lang wachten", "niet teruggebeld",
+        "bereikbaarheid", "niet te bereiken",
+        # Frans
+        "messagerie", "injoignable", "pas de réponse",
+        # Engels
+        "no answer", "unreachable", "couldn't reach", "went to voicemail",
     ],
 }
 
@@ -66,10 +92,20 @@ SECTOR_KEYWORD_OVERRIDES: dict[str, dict[str, list[str]]] = {}
 _PHONE_PATTERN = re.compile(r"(\+32\s?\d(?:[\s.-]?\d){7,8}|\b0\d(?:[\s.-]?\d){7,8}\b)")
 
 # Hoe meer handmatige signalen en hoe minder tools aanwezig, hoe hoger de score.
-_MANUAL_SIGNAL_WEIGHTS = {"offerte_via_mail": 2, "phone_only_cta": 2, "mailto_contact": 1}
+_MANUAL_SIGNAL_WEIGHTS = {
+    "has_phone_complaint": 3,  # sterkste signaal: klanten klagen zelf over bereikbaarheid
+    "offerte_via_mail": 2,
+    "phone_only_cta": 2,       # phone aanwezig, geen boekingstool
+    "knowledge_sector": 2,     # kennisintensieve sector → RAG-kans
+    "has_faq": 1,              # grote FAQ → chatbot/RAG-kans
+    "mailto_contact": 1,
+    # form_no_autoresponse telt niet mee in score (te zwak als enig signaal)
+    # maar dient wel als haakje via select_haakje()
+}
 _TOOL_SIGNAL_PENALTIES = {
-    "has_form": 1,
-    "has_booking_tool": 2,
+    # Pitch is nu breder dan telefonie — ook email/chatbot/RAG voor bedrijven mét booking.
+    # Penalty verlaagd: een booking tool sluit mail-chaos, FAQ-vragen of RAG-kansen niet uit.
+    "has_booking_tool": 1,
     "has_webshop": 2,
     "has_livechat": 1,
     "has_email_marketing": 1,
@@ -98,7 +134,12 @@ def detect_signals(html: str, niche: str | None = None) -> dict[str, bool]:
     has_email_marketing = _contains_any(lower, _keywords_for("has_email_marketing", niche))
     offerte_via_mail = _contains_any(lower, _keywords_for("offerte_via_mail", niche)) and not has_form
     has_phone = "tel:" in lower or bool(_PHONE_PATTERN.search(html))
-    phone_only_cta = has_phone and not has_booking_tool and not has_form
+    phone_only_cta = has_phone and not has_booking_tool
+    has_faq = _contains_any(lower, _keywords_for("has_faq", niche))
+    knowledge_sector = _contains_any(lower, _keywords_for("knowledge_sector", niche))
+    # form aanwezig maar geen auto-reply taalgebruik → opvolging verloopt handmatig
+    has_autoresponse = _contains_any(lower, _keywords_for("has_autoresponse", niche))
+    form_no_autoresponse = has_form and not has_autoresponse and not has_booking_tool
 
     return {
         "mailto_contact": mailto_contact,
@@ -109,6 +150,10 @@ def detect_signals(html: str, niche: str | None = None) -> dict[str, bool]:
         "has_email_marketing": has_email_marketing,
         "phone_only_cta": phone_only_cta,
         "offerte_via_mail": offerte_via_mail,
+        "has_faq": has_faq,
+        "knowledge_sector": knowledge_sector,
+        "form_no_autoresponse": form_no_autoresponse,
+        "has_phone_complaint": False,  # wordt gezet via reviews in apply_signals
     }
 
 
@@ -119,11 +164,19 @@ def compute_score(signalen: dict[str, bool]) -> int:
 
 
 def select_haakje(signalen: dict[str, bool]) -> str:
-    """Kiest één concreet Nederlands haakje - de meest opvallende handmatige flow."""
+    """Kiest één concreet Nederlands haakje — de meest opvallende handmatige of automatiseerbare flow."""
+    if signalen.get("has_phone_complaint"):
+        return "Klanten vermelden in reviews dat ze moeilijk telefonisch contact krijgen of op voicemail stuiten."
+    if signalen.get("knowledge_sector"):
+        return "Kennisintensieve sector: klanten stellen waarschijnlijk steeds dezelfde vragen die handmatig beantwoord worden of waarbij dossiers/documenten handmatig opgezocht worden."
     if signalen.get("offerte_via_mail"):
-        return "Offertes worden via mail aangevraagd en wellicht handmatig opgemaakt."
+        return "Offertes worden via mail aangevraagd en wellicht handmatig verwerkt."
     if signalen.get("phone_only_cta"):
-        return "Geen online boeking of formulier - afspraken gaan blijkbaar telefonisch."
+        return "Afspraken lopen telefonisch — geen online boekingstool gevonden op de site."
+    if signalen.get("form_no_autoresponse"):
+        return "Contactformulier aanwezig maar geen automatische bevestiging of opvolging gedetecteerd — leads worden waarschijnlijk handmatig opgevolgd."
+    if signalen.get("has_faq"):
+        return "Grote FAQ-sectie aanwezig — wijst op veel herhalende klantvragen die een chatbot of kennissysteem automatisch kan afhandelen."
     if signalen.get("mailto_contact") and not signalen.get("has_form"):
         return "Intake loopt via e-mail (mailto) in plaats van een gekoppeld formulier."
     return ""
@@ -141,6 +194,12 @@ def apply_signals(leads: list[LeadState], min_score: int = MIN_BEHOEFTE_SCORE) -
             continue
 
         signalen = detect_signals(html, lead.get("niche"))
+
+        # Reviews scannen op telefonische bereikbaarheidsklachten (geen extra request).
+        reviews = lead.get("reviews_tekst", "")
+        if reviews and _contains_any(reviews.lower(), _keywords_for("has_phone_complaint", None)):
+            signalen["has_phone_complaint"] = True
+
         score = compute_score(signalen)
         haakje = select_haakje(signalen)
 

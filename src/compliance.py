@@ -21,6 +21,18 @@ from src.state import LeadState
 
 logger = logging.getLogger(__name__)
 
+# Publieke e-maildiensten mogen nooit als bedrijfsdomein op de suppression-list komen:
+# één zelfstandige met een gmail-adres zou anders alle toekomstige gmail-leads blokkeren.
+FREEMAIL_DOMAINS = {
+    "gmail.com", "hotmail.com", "outlook.com", "live.com", "yahoo.com",
+    "icloud.com", "telenet.be", "skynet.be", "proximus.be",
+}
+
+
+def is_suppressible_domain(domain: str) -> bool:
+    """False voor publieke maildiensten - die horen nooit op de suppression-list."""
+    return domain.lower() not in FREEMAIL_DOMAINS
+
 
 def _domain(url: str | None) -> str | None:
     if not url:

@@ -1,9 +1,24 @@
+# Secrets
 .env
-__pycache__/
-*.pyc
+
+# Python
 .venv/
 venv/
-data/output/*.xlsx
-.pytest_cache/
+__pycache__/
+*.pyc
 *.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Editor / OS / tooling
 .DS_Store
+.claude/
+CLAUDE.md
+
+# Project-specific: private outreach data and one-off batch scripts
+data/output/
+data/gmail_credentials.json
+data/gmail_token.json
+data/send_queue.json
+data/suppression.csv
+scripts/

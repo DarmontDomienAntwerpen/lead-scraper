@@ -30,14 +30,17 @@ def test_detect_signals_finds_booking_tool():
     assert signalen["has_booking_tool"] is True
 
 
-def test_detect_signals_phone_only_cta_requires_no_form_or_booking():
+def test_detect_signals_phone_only_cta_requires_no_booking_tool():
     html = "<p>Bel ons op 03 222 33 44 voor een afspraak.</p>"
-    signalen = detect_signals(html)
-    assert signalen["phone_only_cta"] is True
+    assert detect_signals(html)["phone_only_cta"] is True
 
+    # Een contactformulier blokkeert phone_only_cta NIET meer (form ≠ telefonische afhandeling)
     html_with_form = html + "<form></form>"
-    signalen_with_form = detect_signals(html_with_form)
-    assert signalen_with_form["phone_only_cta"] is False
+    assert detect_signals(html_with_form)["phone_only_cta"] is True
+
+    # Maar een echte boekingstool wel
+    html_with_booking = html + '<script src="fresha.com/widget"></script>'
+    assert detect_signals(html_with_booking)["phone_only_cta"] is False
 
 
 def test_detect_signals_offerte_via_mail_requires_no_form():
@@ -51,7 +54,10 @@ def test_compute_score_rewards_manual_penalizes_tools():
     assert compute_score(manual_only) == 2
 
     manual_with_tool = dict(manual_only, has_booking_tool=True)
-    assert compute_score(manual_with_tool) == 0  # geklemd op 0, nooit negatief
+    assert compute_score(manual_with_tool) == 1  # penalty (1) sluit signaal niet volledig uit
+
+    manual_with_webshop = dict(manual_only, has_webshop=True)
+    assert compute_score(manual_with_webshop) == 0  # zwaardere penalty (2), geklemd op 0
 
 
 def test_select_haakje_prioritizes_offerte_via_mail():

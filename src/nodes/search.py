@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
-DETAILS_FIELDS = "website,formatted_phone_number"
+DETAILS_FIELDS = "website,formatted_phone_number,reviews"
 BRON = "Google Places"
 MAX_PAGES = 3  # legacy Text Search geeft max 20 resultaten/pagina -> max 60 candidates
 
@@ -88,17 +88,20 @@ async def _search_with_client(
                 logger.debug("Lead overgeslagen (geen website): %s", name)
                 continue
 
-            leads.append(
-                new_lead(
-                    zoekterm=zoekterm,
-                    place_id=place_id,
-                    bedrijfsnaam=name,
-                    website=website,
-                    telefoon=details.get("formatted_phone_number"),
-                    bron=BRON,
-                    opgehaald_op=datetime.now(timezone.utc).isoformat(),
-                )
+            reviews_tekst = " ".join(
+                r.get("text", "") for r in details.get("reviews", []) if r.get("text")
             )
+            lead = new_lead(
+                zoekterm=zoekterm,
+                place_id=place_id,
+                bedrijfsnaam=name,
+                website=website,
+                telefoon=details.get("formatted_phone_number"),
+                bron=BRON,
+                opgehaald_op=datetime.now(timezone.utc).isoformat(),
+            )
+            lead["reviews_tekst"] = reviews_tekst
+            leads.append(lead)
 
         next_page_token = data.get("next_page_token")
         page += 1

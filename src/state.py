@@ -29,6 +29,7 @@ class LeadState(TypedDict):
     contact_url: str | None  # contactpagina-URL, enkel gezet als er geen e-mailadres gevonden werd
     ruwe_tekst: str
     ruwe_html: str  # ongestripte HTML zoals scrape.py die al ophaalt, voor regelgebaseerde signaaldetectie
+    reviews_tekst: str  # samengevoegde Google Reviews-tekst, opgehaald in search-stap
     signalen: dict[str, bool]  # booleans uit src/nodes/signals.py (mailto_contact, has_form, ...)
     behoefte_score: int  # hoe meer handmatige signalen/hoe minder tools, hoe hoger
     haakje: str  # concreet Nederlands signaal-haakje voor de pitch, bv. "intake loopt via mail"
@@ -57,6 +58,7 @@ def new_lead(*, zoekterm: str, place_id: str, bedrijfsnaam: str,
         contact_url=None,
         ruwe_tekst="",
         ruwe_html="",
+        reviews_tekst="",
         signalen={},
         behoefte_score=0,
         haakje="",

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.nodes.write import _validate_mail, _validate_onderwerpregel, write_mails
+from src.nodes.write import _validate_mail, _validate_onderwerpregel, write_mails, SIGNATURE, _EXTRA_REGEL, strip_body
 from src.state import new_lead
 
 
@@ -35,10 +35,10 @@ def test_validate_mail_flags_formal_u():
     assert any("u" in p for p in problemen)
 
 
-def test_validate_mail_requires_opt_out():
-    mail = "Hoi! Mooie website. Mag ik een videodemo van 1 minuut sturen?"
+def test_validate_mail_flags_too_short_mail():
+    mail = "Hoi!"
     problemen = _validate_mail(mail)
-    assert any("opt-out" in p for p in problemen)
+    assert problemen == []  # korte mail is geen validatiefout (enkel kwaliteitsissue via LLM-rechter)
 
 
 def test_validate_mail_flags_spam_trigger_words():
@@ -66,8 +66,7 @@ def test_validate_mail_passes_compliant_mail():
     mail = (
         "Ik zag dat jullie gespecialiseerd zijn in e-bike-herstellingen. "
         "Met automatisering hou je veel tijd over op het opmaken van offertes en planning. "
-        "Mag ik een kort gesprek inplannen om te horen wat bij jullie veel tijd kost? "
-        "Laat het gerust weten als je dit niet wil ontvangen."
+        "Ik bekijk graag in 15 minuten wat voor jullie het meeste oplevert."
     )
     assert _validate_mail(mail) == []
 
@@ -105,7 +104,37 @@ def test_validate_onderwerpregel_passes_short_subject():
     assert _validate_onderwerpregel("Offertes overtypen bij Peeters?") == []
 
 
+def test_strip_body_removes_greeting_and_signature():
+    body = "Eerste zin.\n\nTweede zin.\n\nDerde zin."
+    full = f"Beste Loodgieter BV,\n\n{body}\n\n{_EXTRA_REGEL}\n\n{SIGNATURE}"
+    assert strip_body(full) == body
+
+
+def test_strip_body_removes_double_extra_regel():
+    body = "Eerste zin.\n\nTweede zin.\n\nDerde zin."
+    broken = f"Beste BV,\n\n{body}\n\n{_EXTRA_REGEL}\n\n{_EXTRA_REGEL}\n\n{SIGNATURE}"
+    assert strip_body(broken) == body
+
+
+def test_strip_body_handles_no_greeting():
+    body = "Eerste zin.\n\nTweede zin."
+    assert strip_body(body) == body
+
+
+def test_validate_mail_flags_literal_duplicate_sentence():
+    mail = "Zin A is uniek.\n\nZin A is uniek.\n\nZin C is anders."
+    problemen = _validate_mail(mail)
+    assert any("identieke" in p for p in problemen)
+
+
+def test_validate_mail_strips_extra_regel_before_counting():
+    body = "Zin 1.\n\nZin 2.\n\nZin 3."
+    mail_with_extra = f"{body}\n\n{_EXTRA_REGEL}"
+    assert _validate_mail(mail_with_extra) == []
+
+
 class FakeLLM:
+    """Simuleert de LLM: geeft responses in volgorde terug, herhaalt de laatste bij overflow."""
     def __init__(self, responses: list[str]):
         self.responses = responses
         self.calls = 0
@@ -116,37 +145,42 @@ class FakeLLM:
         return SimpleNamespace(content=content)
 
 
+def _assembled(naam: str, body: str) -> str:
+    """Verwachte output van _assemble_mail voor gebruik in assertions."""
+    return f"Beste {naam},\n\n{body}\n\n{_EXTRA_REGEL}\n\n{SIGNATURE}"
+
+
 @pytest.mark.asyncio
 async def test_write_mails_accepts_compliant_first_try():
     lead = _make_ok_lead()
-    compliant_mail = (
+    body = (
         "Jullie intake loopt via e-mail in plaats van een gekoppeld formulier. "
         "Met automatisering hou je veel tijd over op het opmaken van offertes. "
-        "Herkenbaar bij jullie? "
-        "Laat het gerust weten als je dit niet wil ontvangen."
+        "Ik bekijk graag in 15 minuten wat voor jullie het meeste oplevert."
     )
-    fake = FakeLLM([f"ONDERWERP: Offertes overtypen?\nMAIL: {compliant_mail}"])
+    # FakeLLM: [1] mail-generatie, [2] _judge_body antwoord → "OK"
+    fake = FakeLLM([f"ONDERWERP: Offertes overtypen?\nMAIL: {body}", "OK"])
     result = await write_mails([lead], llm=fake)
-    assert result[0]["mail"] == compliant_mail
+    assert result[0]["mail"] == _assembled("Fietsen Peeters", body)
     assert result[0]["onderwerpregel"] == "Offertes overtypen?"
-    assert fake.calls == 1
+    assert fake.calls == 2  # 1 generate + 1 judge
 
 
 @pytest.mark.asyncio
 async def test_write_mails_regenerates_once_on_violation():
     lead = _make_ok_lead()
     bad = "ONDERWERP: Hoi\nMAIL: Ik zag dat u een mooie website heeft."
-    good_mail = (
+    good_body = (
         "Jullie intake loopt via e-mail in plaats van een gekoppeld formulier. "
         "Met automatisering hou je veel tijd over op het opmaken van offertes. "
-        "Herkenbaar bij jullie? "
-        "Laat het gerust weten als je dit niet wil ontvangen."
+        "Ik bekijk graag in 15 minuten wat voor jullie het meeste oplevert."
     )
-    good = f"ONDERWERP: Offertes overtypen?\nMAIL: {good_mail}"
-    fake = FakeLLM([bad, good])
+    good = f"ONDERWERP: Offertes overtypen?\nMAIL: {good_body}"
+    # [1] bad generate, [2] good regenerate, [3] judge → OK
+    fake = FakeLLM([bad, good, "OK"])
     result = await write_mails([lead], llm=fake)
-    assert fake.calls == 2
-    assert result[0]["mail"] == good_mail
+    assert fake.calls == 3
+    assert result[0]["mail"] == _assembled("Fietsen Peeters", good_body)
     assert result[0]["status"] == "ok"
 
 
@@ -154,9 +188,10 @@ async def test_write_mails_regenerates_once_on_violation():
 async def test_write_mails_keeps_lead_after_failed_regeneration_but_flags_it():
     lead = _make_ok_lead()
     bad = "ONDERWERP: Hoi\nMAIL: Ik zag dat u een mooie website heeft."
-    fake = FakeLLM([bad, bad])
+    # [1] bad, [2] bad regenerate, [3] judge → OK (judge only runs on final mail)
+    fake = FakeLLM([bad, bad, "OK"])
     result = await write_mails([lead], llm=fake)
-    assert result[0]["mail"] == "Ik zag dat u een mooie website heeft."
+    assert "Ik zag dat u een mooie website heeft." in result[0]["mail"]
     assert result[0]["status"] == "ok"
     assert "Mail-validatie" in result[0]["error_reden"]
 

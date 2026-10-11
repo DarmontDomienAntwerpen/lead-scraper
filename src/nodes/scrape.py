@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -154,11 +154,27 @@ async def _find_email(page: Page, homepage_html: str, base_url: str) -> str | No
         return None
 
 
+def _clean_email(addr: str) -> str | None:
+    """Normaliseert een ruw geëxtraheerd adres: url-decodeert (sommige sites
+    obfusceren mailto-links met percent-encoding, bv. %69nfo@... voor info@...)
+    en strip een eventueel dubbel 'mailto:'-prefix (sommige sites schrijven
+    zelf foutief href="mailto:mailto:adres@...").  Geeft None terug als het
+    resultaat geen geldig e-mailadres is, in plaats van rommel door te geven."""
+    addr = unquote(addr.strip())
+    while addr.lower().startswith("mailto:"):
+        addr = addr[len("mailto:"):]
+    addr = addr.strip()
+    if _EMAIL_PATTERN.fullmatch(addr):
+        return addr
+    return None
+
+
 def _extract_email(html: str) -> str | None:
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup.select('a[href^="mailto:"]'):
-        addr = tag["href"].split("mailto:", 1)[1].split("?")[0].strip()
-        if addr and "@" in addr:
+        raw = tag["href"].split("mailto:", 1)[1].split("?")[0]
+        addr = _clean_email(raw)
+        if addr:
             return addr
 
     text = soup.get_text(separator=" ")

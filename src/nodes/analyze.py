@@ -78,6 +78,8 @@ async def analyze_leads(leads: list[LeadState], llm: StructuredLLM | None = None
             lead["error_reden"] = "Geen scrape-tekst beschikbaar voor analyse"
             continue
 
+
+
         try:
             resultaat = await active_llm.ainvoke(
                 [

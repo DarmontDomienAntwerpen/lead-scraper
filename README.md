@@ -1,119 +1,119 @@
-# Lead-generatie pipeline — Antwerpen B2B
+# Lead Scraper — AI B2B Prospecting Pipeline
 
-Lokaal draaiende pipeline die zelfstandigen/KMO's in regio Antwerpen opzoekt,
-hun website scrapet, hun niche bepaalt en een korte gepersonaliseerde
-verkoopmail schrijft. De output is een Excel-bestand dat je **manueel**
-naleest — er wordt nooit automatisch iets verstuurd.
+**Finds local businesses, analyses their website, scores how much they would benefit from automation, and drafts a personalised outreach email for a human to review.**
 
-## Architectuur
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-pipeline-1C3C3C?logo=langchain&logoColor=white)
+![Claude](https://img.shields.io/badge/Anthropic-Claude-D97757?logo=anthropic&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-81_passing-brightgreen)
 
-Vier samenwerkende rollen, elk een eigen module:
+> **In short:** you enter a type of business ("plumber") and a region ("Antwerp"). The pipeline finds matching companies through Google Places, reads their website, detects manual processes (no online booking, contact only by phone, and so on), skips companies with no clear need, and writes a short, personal email for each remaining lead. The output is an Excel file for a human to review. **Nothing is ever sent automatically.**
 
-| Rol | Verantwoordelijkheid | Bestanden |
-|---|---|---|
-| **Architect** | systeemontwerp, State, graph-bedrading | `src/state.py`, `src/graph.py` |
-| **Engineer** | databronnen: Google Places + Playwright-scraper | `src/nodes/search.py`, `src/nodes/scrape.py` |
-| **Reviewer** | niche bepalen, bad-data weigeren, ijsbreker | `src/nodes/analyze.py` |
-| **Optimizer** | mail-copywriting, Pydantic-export, compliance | `src/nodes/write.py`, `src/nodes/export.py`, `src/compliance.py` |
-
-De pipeline is een LangGraph `StateGraph`:
-`search → scrape → analyze → write → export`, met conditionele edges die
-rechtstreeks naar `export` springen zodra er geen actieve leads meer
-overblijven (alles al `error`/`skipped`). Eén kapotte lead stopt de run dus
-nooit.
-
-## Setup
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
-
-cp .env.example .env
-# vul nu ANTHROPIC_API_KEY en GOOGLE_PLACES_API_KEY in .env in
-# NEVERBOUNCE_API_KEY is optioneel (zie "E-mailverificatie" hieronder)
+```mermaid
+flowchart LR
+    A[Search<br/>Google Places] --> B[Scrape<br/>Playwright]
+    B --> C[Signals<br/>rule-based need score]
+    C --> D[Analyse<br/>Claude: niche + quality]
+    D --> E[Write<br/>Claude: personal email]
+    E --> F[Export<br/>Excel for human review]
+    A -. no active leads .-> F
+    B -. no active leads .-> F
+    C -. low score: skipped .-> F
+    D -. rejected .-> F
 ```
 
-## Gebruik
+---
 
+## What it does
+
+- **Search**: finds businesses by keyword and region with the Google Places API.
+- **Scrape**: reads each website with a headless browser (Playwright) and respects `robots.txt`.
+- **Signals**: rule-based detection of manual processes (forms, `mailto:` and `tel:` links, missing booking widgets) and a "need score". Low-scoring leads are skipped before any paid LLM call.
+- **Analyse**: Claude determines the company's niche and rejects unusable data.
+- **Write**: Claude drafts a personalised email with an opening line based on what was found on the site.
+- **Verify & comply**: optional email verification (NeverBounce), a suppression list, a mandatory opt-out line, and spam-trigger checks in code.
+- **Export**: an Excel file with the approved leads, plus an audit log of every lead and why it was kept or rejected.
+
+## How it works
+
+The pipeline is a LangGraph `StateGraph`. Each node updates a shared, typed state. Conditional edges jump straight to `export` as soon as no active leads remain, so one broken website never stops a run. The cheap rule-based scoring runs before the expensive LLM steps to keep costs low.
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Orchestration | LangGraph `StateGraph` |
+| LLM | Anthropic Claude (via LangChain) |
+| Data sources | Google Places API, Playwright, BeautifulSoup |
+| Validation | Pydantic |
+| Output | openpyxl (Excel) |
+| UI | Streamlit |
+| Testing | pytest, respx (all external APIs mocked) |
+
+## Getting started
+
+### Prerequisites
+- Python 3.11+
+- API keys for Anthropic and Google Places (NeverBounce is optional)
+
+### Installation
+```bash
+git clone https://github.com/DarmontDomienAntwerpen/lead-scraper.git
+cd lead-scraper
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+```
+
+### Configuration
+```bash
+cp .env.example .env
+```
+Fill in `ANTHROPIC_API_KEY` and `GOOGLE_PLACES_API_KEY`. Optionally, copy `data/suppression.example.csv` to `data/suppression.csv` and list the domains that must never be contacted.
+
+### Run
+From the command line:
 ```bash
 python main.py --zoekterm "loodgieter" --regio Antwerpen --max-leads 20
 ```
-
-Argumenten:
-- `--zoekterm` (verplicht) — bv. `loodgieter`, `fotograaf`, `boekhouder`
-- `--max-leads` (optioneel, standaard `20`)
-- `--regio` (optioneel, standaard `Antwerpen`)
-
-Resultaat: `data/output/leads_<regio>_<timestamp>.xlsx` met twee tabbladen:
-- **Leads** — de goedgekeurde leads, klaar voor manuele review (Bedrijfsnaam,
-  Website, Telefoon, Email, Email-status, Contactformulier, Niche,
-  Openingszin, Gepersonaliseerde Mail). Het e-mailadres wordt best-effort van
-  de website gehaald (mailto-links, dan een contactpagina) — niet elke site
-  vermeldt het. Is er geen (geverifieerd) e-mailadres gevonden maar wél een
-  contactpagina, dan komt de URL daarvan in de kolom "Contactformulier" zodat
-  je de mail zelf kan plakken en versturen via dat formulier (geen
-  automatisch invullen/versturen).
-- **bron_log** — elke verwerkte lead (ook geweigerde/foutieve), met bron,
-  zoekterm, ophaal-timestamp, status en reden — voor traceerbaarheid.
-
-## E-mailverificatie (NeverBounce)
-
-Elk gevonden e-mailadres wordt — als `NEVERBOUNCE_API_KEY` ingevuld is in
-`.env` — gecheckt via de NeverBounce single-check API vóórdat het in de
-Excel terechtkomt:
-
-- `invalid` of `disposable` → het adres wordt verwijderd uit "Email" (valt
-  terug op "Contactformulier" als die URL gevonden werd).
-- `valid`, `catchall` of `unknown` → het adres blijft staan; het resultaat
-  komt in de kolom "Email-status" zodat je zelf kan inschatten hoeveel
-  vertrouwen je erin hebt (vooral bij `catchall`/`unknown` is het verstandig
-  extra te controleren vóór verzending).
-- Geen key ingevuld, of de NeverBounce-call faalt → de check wordt gewoon
-  overgeslagen, het gevonden adres blijft ongeverifieerd staan. Dit is dus
-  een optionele verrijking, geen vereiste om de pipeline te laten draaien.
-
-## Suppression-list
-
-`data/suppression.csv` bevat domeinen die nooit gemaild mogen worden (kolom
-`domein`). Elke lead waarvan het websitedomein hierin voorkomt wordt
-automatisch overgeslagen, ongeacht hoe goed de rest van de pipeline scoorde.
-
-## Robots.txt-beleid
-
-Vóór elke scrape wordt `robots.txt` van het domein opgehaald. Bij een
-expliciete `Disallow` voor de homepage wordt die lead **niet** gescraped
-(status `error`, reden vermeld in `bron_log`). Is `robots.txt` niet bereikbaar
-of niet parseerbaar, dan scrapen we wél door — een onbereikbaar bestand is
-geen disallow. We scrapen daarnaast sequentieel met een korte pauze tussen
-leads (geen parallelle requests naar kleine KMO-sites).
-
-## Tests draaien
-
+Or with the web interface:
 ```bash
-pip install -r requirements.txt
-pip install pytest pytest-asyncio respx
-python -m pytest tests/ -v
+streamlit run app.py
+```
+The result is written to `data/output/leads_<region>_<timestamp>.xlsx`.
+
+## Running the tests
+```bash
+pytest
+```
+81 tests. Google Places, Playwright and Claude are all mocked, so no API credits are used.
+
+## Project structure
+```
+lead-scraper/
+├── src/
+│   ├── graph.py        # LangGraph wiring and conditional edges
+│   ├── state.py        # Typed pipeline state
+│   ├── config.py       # Settings and API keys
+│   ├── compliance.py   # Opt-out, suppression list, spam-trigger checks
+│   └── nodes/          # search · scrape · signals · analyze · write · export
+├── data/
+│   └── suppression.example.csv  # Format of the do-not-contact list
+├── tests/
+├── main.py             # Command-line entry point
+├── app.py              # Streamlit interface
+└── requirements.txt
 ```
 
-Alle tests mocken Google Places (httpx/respx), Playwright (gemockte browser)
-en Claude (fake LLM-objecten) — er wordt geen enkele API-credit verbruikt
-tijdens het testen.
+## Responsible use
+This tool prepares B2B outreach. It does not send it. Every email must be reviewed and sent manually. Each draft contains an opt-out sentence (validated in code), and the suppression list is applied before anything else. The sender is responsible for GDPR compliance.
 
-## GDPR / compliance disclaimer
+## Status & next steps
+Working and used for real prospecting runs. Possible next steps: CRM export and follow-up tracking.
 
-Dit is een hulpmiddel om **B2B cold-outreach** voor te bereiden, niet om ze
-automatisch te versturen:
-
-- De pipeline genereert enkel een Excel-bestand. Verzending gebeurt altijd
-  manueel, door een mens, na controle van elke individuele lead.
-- Elke gegenereerde mail bevat verplicht een opt-out-zin; de schrijf-node
-  valideert dit in code.
-- Respecteer de suppression-list (`data/suppression.csv`) en vul ze aan
-  zodra iemand aangeeft niet meer gecontacteerd te willen worden.
-- B2B cold mail valt in België doorgaans onder het legitiem-belang-criterium
-  van de GDPR, maar **jij** bent als verzender verantwoordelijk voor correcte
-  toepassing (juiste rechtsgrond, opt-out effectief verwerken, geen
-  persoonsgegevens van natuurlijke personen zonder rechtsgrond verwerken).
-  Deze tool geeft geen juridisch advies.
+## Author
+**Domien Darmont**, AI Engineer, Antwerp, Belgium
+GitHub: [@DarmontDomienAntwerpen](https://github.com/DarmontDomienAntwerpen)

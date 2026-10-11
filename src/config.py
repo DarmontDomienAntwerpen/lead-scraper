@@ -36,7 +36,7 @@ SIGNAL_HTML_MAX_CHARS = 50_000
 # af. Standaard 2 = minstens één écht sterk handmatig signaal vereist, niet enkel een losse
 # mailto-link. Instelbaar via --min-score of de MIN_BEHOEFTE_SCORE env-var (0 = niemand
 # uitgefilterd).
-MIN_BEHOEFTE_SCORE = int(os.getenv("MIN_BEHOEFTE_SCORE", "2"))
+MIN_BEHOEFTE_SCORE = int(os.getenv("MIN_BEHOEFTE_SCORE", "1"))
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

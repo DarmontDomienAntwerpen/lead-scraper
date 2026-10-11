@@ -213,6 +213,16 @@ def test_extract_email_returns_none_when_absent():
     assert _extract_email("<p>Geen contactinfo op deze pagina.</p>") is None
 
 
+def test_extract_email_decodes_percent_encoded_mailto():
+    html = '<a href="mailto:%69nfo@s%67-p%72otect.be">Mail</a>'
+    assert _extract_email(html) == "info@sg-protect.be"
+
+
+def test_extract_email_strips_doubled_mailto_prefix():
+    html = '<a href="mailto:mailto:info@slotenmakerinantwerpen.be">Mail</a>'
+    assert _extract_email(html) == "info@slotenmakerinantwerpen.be"
+
+
 def test_find_contact_link_matches_href_or_text():
     html = '<a href="/over-ons">Over ons</a><a href="/contact-ons">Neem contact op</a>'
     assert _find_contact_link(html, "https://example.test") == "https://example.test/contact-ons"
