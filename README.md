@@ -7,7 +7,7 @@
 ![Claude](https://img.shields.io/badge/Anthropic-Claude-D97757?logo=anthropic&logoColor=white)
 ![Playwright](https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-81_passing-brightgreen)
+[![Tests](https://github.com/DarmontDomienAntwerpen/lead-scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/DarmontDomienAntwerpen/lead-scraper/actions/workflows/tests.yml)
 
 > **In short:** you enter a type of business ("plumber") and a region ("Antwerp"). The pipeline finds matching companies through Google Places, reads their website, detects manual processes (no online booking, contact only by phone, and so on), skips companies with no clear need, and writes a short, personal email for each remaining lead. The output is an Excel file for a human to review. **Nothing is ever sent automatically.**
 
