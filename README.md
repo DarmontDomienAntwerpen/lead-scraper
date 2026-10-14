@@ -117,8 +117,11 @@ This tool prepares B2B outreach. It does not send it. Every email must be review
 Working and used for real prospecting runs. Possible next steps: CRM export and follow-up tracking.
 
 ## Author
-**Domien Darmont**, AI Engineer, Antwerp, Belgium
-GitHub: [@DomienDarmontAntwerpen](https://github.com/DomienDarmontAntwerpen)
+**Domien Darmont**, AI Engineer, Antwerp, Belgium  
+GitHub: [@DomienDarmontAntwerpen](https://github.com/DomienDarmontAntwerpen)  
+LinkedIn: [Domien Darmont](https://www.linkedin.com/in/domien-darmont-b53b7640b/)
+
+A live demo or more information is available on request.
 
 ## License
 © 2026 Domien Darmont. All rights reserved.
