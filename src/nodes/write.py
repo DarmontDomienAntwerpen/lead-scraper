@@ -18,20 +18,37 @@ from typing import Protocol
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
 
-from src.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+from src.config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    SENDER_EMAIL,
+    SENDER_LINKEDIN,
+    SENDER_NAME,
+    SENDER_PHONE,
+    SENDER_TAGLINE,
+)
 from src.state import LeadState
 
 logger = logging.getLogger(__name__)
 
-SIGNATURE = """Vragen? Stuur gerust een berichtje via WhatsApp of mail — ik reageer snel.
+def _build_signature() -> str:
+    """Sender details come from .env (SENDER_*), so personal contact details
+    are not hard-coded in the published source. Empty fields are left out."""
+    contact_lines = [
+        SENDER_NAME,
+        SENDER_TAGLINE,
+        SENDER_EMAIL,
+        f"WhatsApp: {SENDER_PHONE}" if SENDER_PHONE else "",
+        SENDER_LINKEDIN,
+    ]
+    contact = "\n".join(line for line in contact_lines if line)
+    return (
+        "Vragen? Stuur gerust een berichtje via WhatsApp of mail — ik reageer snel.\n\n"
+        f"Met vriendelijke groeten,\n\n{contact}"
+    )
 
-Met vriendelijke groeten,
 
-Domien Darmont
-Darmont Digital — AI-automatisering voor zelfstandigen
-darmontdigital@gmail.com
-WhatsApp: 0497 66 94 07
-https://www.linkedin.com/in/domien-darmont-b53b7640b/"""
+SIGNATURE = _build_signature()
 
 SYSTEM_PROMPT = """Je bent een Vlaamse B2B-copywriter die gepersonaliseerde cold-outreach mails schrijft voor Domien Darmont.
 
