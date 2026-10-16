@@ -21,7 +21,7 @@ SENDER_NAME = os.getenv("SENDER_NAME") or "Domien Darmont"
 SENDER_TAGLINE = os.getenv("SENDER_TAGLINE", "")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
 SENDER_PHONE = os.getenv("SENDER_PHONE", "")
-SENDER_LINKEDIN = os.getenv("SENDER_LINKEDIN") or "https://www.linkedin.com/in/domien-darmont-b53b7640b/"
+SENDER_LINKEDIN = os.getenv("SENDER_LINKEDIN") or "https://www.linkedin.com/in/domiendarmont/"
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
