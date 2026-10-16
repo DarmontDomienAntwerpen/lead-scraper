@@ -111,7 +111,7 @@ lead-scraper/
 ```
 
 ## Responsible use
-This tool prepares B2B outreach. It does not send it. Every email must be reviewed and sent manually. Each draft contains an opt-out sentence (validated in code), and the suppression list is applied before anything else. The sender is responsible for GDPR compliance.
+This tool prepares B2B outreach. It does not send it. Every email must be reviewed and sent manually. Each draft contains an opt-out sentence (validated in code), and the suppression list is applied before anything else. The sender is responsible for GDPR compliance. The `.gitignore` deliberately excludes local files for an optional, manual mail step (`data/send_queue.json`, `data/gmail_token.json`, `scripts/`); none of that is part of this repository, and the pipeline itself contains no code that sends email.
 
 ## Status & next steps
 Working and used for real prospecting runs. Possible next steps: CRM export and follow-up tracking.
